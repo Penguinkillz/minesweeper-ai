@@ -1,1 +1,1 @@
-"""Minesweeper project. Stage 4 adds the decision-tree agent beside CLP and MCMC."""
+"""Minesweeper project. Stage 5 compares the three beginner agents on one seed list."""

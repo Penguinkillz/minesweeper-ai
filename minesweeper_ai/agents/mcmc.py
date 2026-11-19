@@ -83,6 +83,10 @@ class MCMCResult:
         hidden_cells: tuple[Cell, ...],
         retained_states: tuple[tuple[int, ...], ...] | None,
         initial_assignment: dict[Cell, int] | None,
+        retained_local_updates: int = 0,
+        retained_local_updates_changed: int = 0,
+        discarded_local_updates: int = 0,
+        discarded_local_updates_changed: int = 0,
     ) -> None:
         if regime not in (REGIME_EXACT, REGIME_LOCAL):
             raise ValueError(f"unknown regime {regime}")
@@ -102,6 +106,12 @@ class MCMCResult:
         self.hidden_cells = hidden_cells
         self.retained_states = retained_states
         self.initial_assignment = initial_assignment
+        # Observational counts for the evaluation log. They are not inputs
+        # to the decision, and they are not a convergence diagnostic.
+        self.retained_local_updates = retained_local_updates
+        self.retained_local_updates_changed = retained_local_updates_changed
+        self.discarded_local_updates = discarded_local_updates
+        self.discarded_local_updates_changed = discarded_local_updates_changed
 
 
 class FrontierSearchTruncated(Exception):
@@ -326,19 +336,28 @@ def _resample_block(
     bits: list[int],
     block: tuple[int, ...],
     rng: random.Random,
-) -> None:
+) -> bool:
     """Draw the block from its full conditional and write it back.
 
     The proposal is that conditional, the cells outside the block are
     unchanged, and ``p(x_B | x_{-B}) p(x_{-B}) = p(x)``. The Metropolis–Hastings
     ratio is therefore 1, and the draw is always accepted.
+
+    The return value is whether any cell in ``block`` changed. Cells outside
+    the block are not inspected. The random draw happens before that
+    comparison, so the chain is the same as a write that does not report
+    the change.
     """
     legal = _legal_settings(position, bits, block)
     if not legal:
         raise RuntimeError("a legal layout has an empty block conditional")
     chosen = legal[rng.randrange(len(legal))]
+    changed = False
     for index, bit in zip(block, chosen):
-        bits[index] = bit
+        if bits[index] != bit:
+            bits[index] = bit
+            changed = True
+    return changed
 
 
 def _sweep(
@@ -346,7 +365,7 @@ def _sweep(
     bits: list[int],
     rng: random.Random,
     self_loop_probability: float,
-) -> None:
+) -> tuple[int, int]:
     """One sweep: one attempted local update per hidden cell.
 
     Each attempt stays put with the self-loop probability, and otherwise
@@ -354,31 +373,43 @@ def _sweep(
     probability. The self-loop is an identity kernel. Mixed with either
     Gibbs kernel, the uniform distribution on legal layouts stays stationary.
     The mixture does not establish irreducibility.
+
+    The return value is ``(attempted, changed)``. A pair or neighbourhood
+    update reports whether its own block changed. A self-loop, a kernel with
+    nothing to resample, and a conditional draw of the current assignment
+    count as attempts that did not change the state. No extra random number
+    is drawn to make that count.
     """
+    attempted = 0
+    changed = 0
     hidden_count = len(position.hidden)
     for _ in range(hidden_count):
+        attempted += 1
         if rng.random() < self_loop_probability:
             continue
         if rng.random() < 0.5:
-            _pair_update(position, bits, rng)
+            moved = _pair_update(position, bits, rng)
         else:
-            _neighbourhood_update(position, bits, rng)
+            moved = _neighbourhood_update(position, bits, rng)
+        if moved:
+            changed += 1
+    return attempted, changed
 
 
-def _pair_update(position: _Position, bits: list[int], rng: random.Random) -> None:
+def _pair_update(position: _Position, bits: list[int], rng: random.Random) -> bool:
     """Resample two hidden cells. This is the move that connects (1, 0) to (0, 1)."""
     if len(position.hidden) < 2:
-        return
+        return False
     first, second = rng.sample(range(len(position.hidden)), 2)
-    _resample_block(position, bits, (first, second), rng)
+    return _resample_block(position, bits, (first, second), rng)
 
 
-def _neighbourhood_update(position: _Position, bits: list[int], rng: random.Random) -> None:
+def _neighbourhood_update(position: _Position, bits: list[int], rng: random.Random) -> bool:
     """Resample the hidden neighbourhood of one revealed clue. Size at most 8."""
     if not position.neighbourhoods:
-        return
+        return False
     block = position.neighbourhoods[rng.randrange(len(position.neighbourhoods))]
-    _resample_block(position, bits, block, rng)
+    return _resample_block(position, bits, block, rng)
 
 
 def _regime_a(state: VisibleState, enumerated: QueryResult) -> MCMCResult:
@@ -412,6 +443,10 @@ def _regime_a(state: VisibleState, enumerated: QueryResult) -> MCMCResult:
         hidden_cells=hidden,
         retained_states=None,
         initial_assignment=None,
+        retained_local_updates=0,
+        retained_local_updates_changed=0,
+        discarded_local_updates=0,
+        discarded_local_updates_changed=0,
     )
 
 
@@ -486,12 +521,20 @@ def _regime_b(
         raise RuntimeError("the CLP initialiser returned a layout the clues reject")
     counts = [0 for _ in position.hidden]
     recorded_during_burn_in = 0
+    discarded_attempted = 0
+    discarded_changed = 0
     for _ in range(burn_in_sweeps):
-        _sweep(position, bits, rng, self_loop_probability)
+        attempted, changed = _sweep(position, bits, rng, self_loop_probability)
+        discarded_attempted += attempted
+        discarded_changed += changed
     recorded = 0
+    retained_attempted = 0
+    retained_changed = 0
     kept: list[tuple[int, ...]] = []
     for _ in range(retained_sweeps):
-        _sweep(position, bits, rng, self_loop_probability)
+        attempted, changed = _sweep(position, bits, rng, self_loop_probability)
+        retained_attempted += attempted
+        retained_changed += changed
         recorded += 1
         for index, bit in enumerate(bits):
             counts[index] += bit
@@ -535,6 +578,10 @@ def _regime_b(
         hidden_cells=position.hidden,
         retained_states=tuple(kept) if keep_states else None,
         initial_assignment=dict(assignment),
+        retained_local_updates=retained_attempted,
+        retained_local_updates_changed=retained_changed,
+        discarded_local_updates=discarded_attempted,
+        discarded_local_updates_changed=discarded_changed,
     )
 
 

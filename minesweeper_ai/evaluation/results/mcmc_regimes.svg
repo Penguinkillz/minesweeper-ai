@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="380" viewBox="0 0 720 380">
+<rect width="100%" height="100%" fill="#f6f4ef"/>
+<text x="56" y="32" font-family="sans-serif" font-size="18" fill="#1c1917">MCMC regimes</text>
+<text x="56" y="50" font-family="sans-serif" font-size="12" fill="#57534e">decisions in the log</text>
+<line x1="56" y1="308" x2="696" y2="308" stroke="#1c1917" stroke-width="1"/>
+<rect x="100.00" y="56.00" width="72.00" height="252.00" fill="#0f766e"/>
+<text x="136.00" y="48.00" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1c1917">638</text>
+<text x="136.00" y="330.00" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1c1917">exact_marginals</text>
+<rect x="260.00" y="205.30" width="72.00" height="102.70" fill="#b45309"/>
+<text x="296.00" y="197.30" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1c1917">260</text>
+<text x="296.00" y="330.00" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1c1917">local_only</text>
+<rect x="420.00" y="205.30" width="72.00" height="102.70" fill="#1d4ed8"/>
+<text x="456.00" y="197.30" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1c1917">260</text>
+<text x="456.00" y="330.00" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1c1917">frontier above 16</text>
+<rect x="580.00" y="308.00" width="72.00" height="0.00" fill="#7c3aed"/>
+<text x="616.00" y="300.00" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1c1917">0</text>
+<text x="616.00" y="330.00" text-anchor="middle" font-family="sans-serif" font-size="12" fill="#1c1917">node cap</text>
+</svg>
