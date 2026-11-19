@@ -1,0 +1,45 @@
+max_depth=2
+min_samples_leaf=1
+stop_on_zero_gain=False
+nodes:
+test adj_clue_count safe=3427 mine=2767
+  value 1
+    test min_slack threshold 0.4642857142857143 safe=1136 mine=160
+      value < 0.4642857142857143
+        leaf safe=854 mine=72 prediction=0 tie=no
+      value >= 0.4642857142857143
+        leaf safe=282 mine=88 prediction=0 tie=no
+  value 2
+    test min_slack threshold 0.55 safe=1358 mine=717
+      value < 0.55
+        leaf safe=1347 mine=576 prediction=0 tie=no
+      value >= 0.55
+        leaf safe=11 mine=141 prediction=1 tie=no
+  value 3
+    test min_slack threshold 0.55 safe=760 mine=648
+      value < 0.55
+        leaf safe=759 mine=544 prediction=0 tie=no
+      value >= 0.55
+        leaf safe=1 mine=104 prediction=1 tie=no
+  value 4
+    test min_slack threshold 0.3666666666666667 safe=119 mine=462
+      value < 0.3666666666666667
+        leaf safe=103 mine=152 prediction=1 tie=no
+      value >= 0.3666666666666667
+        leaf safe=16 mine=310 prediction=1 tie=no
+  value 5
+    test hidden_neighbour_count safe=44 mine=387
+      value 0
+        leaf safe=0 mine=130 prediction=1 tie=no
+      value 3
+        leaf safe=44 mine=257 prediction=1 tie=no
+  value 6
+    test remaining_mine_ratio threshold 0.31754032258064513 safe=10 mine=143
+      value < 0.31754032258064513
+        leaf safe=0 mine=69 prediction=1 tie=no
+      value >= 0.31754032258064513
+        leaf safe=10 mine=74 prediction=1 tie=no
+  value 7
+    leaf safe=0 mine=173 prediction=1 tie=no
+  value 8
+    leaf safe=0 mine=77 prediction=1 tie=no

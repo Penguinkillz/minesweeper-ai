@@ -1,1 +1,1 @@
-"""Agents. Stage 2 is the CLP agent. Stage 3 is the MCMC Gibbs sampler."""
+"""Agents. CLP proves a cell, MCMC estimates one, and the decision tree predicts one."""

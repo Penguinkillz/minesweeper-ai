@@ -1,0 +1,63 @@
+first_seed=0
+last_seed=99
+boards=100
+snapshot_cap=8
+examples=10308
+train_examples=6194
+validation_examples=2001
+test_examples=2113
+assigned_train_boards=60
+assigned_validation_boards=20
+assigned_test_boards=20
+train_boards_with_examples=60
+validation_boards_with_examples=20
+test_boards_with_examples=20
+chosen_max_depth=2
+chosen_min_samples_leaf=1
+train_error=1465/6194 = 0.2365192121
+validation_error=381/2001 = 0.1904047976
+test_error=482/2113 = 0.2281116895
+empty_tree_train_error=2767/6194 = 0.4467226348
+train_mines_predicted_safe=1280/2767 = 0.4625948681
+train_safe_predicted_mine=185/3427 = 0.0539830756
+empty_tree_validation_error=978/2001 = 0.4887556222
+validation_mines_predicted_safe=326/978 = 0.3333333333
+validation_safe_predicted_mine=55/1023 = 0.0537634409
+empty_tree_test_error=996/2113 = 0.4713677236
+test_mines_predicted_safe=424/996 = 0.4257028112
+test_safe_predicted_mine=58/1117 = 0.0519247986
+depth1_min1_train_error=1698/6194 = 0.2741362609
+depth8_min1_train_error=1061/6194 = 0.1712948014
+validation_grid:
+depth=1 min_samples_leaf=1 validation_error=0.2363818091
+depth=1 min_samples_leaf=5 validation_error=0.2363818091
+depth=1 min_samples_leaf=10 validation_error=0.2363818091
+depth=1 min_samples_leaf=20 validation_error=0.2363818091
+depth=2 min_samples_leaf=1 validation_error=0.1904047976
+depth=2 min_samples_leaf=5 validation_error=0.1904047976
+depth=2 min_samples_leaf=10 validation_error=0.1904047976
+depth=2 min_samples_leaf=20 validation_error=0.1904047976
+depth=3 min_samples_leaf=1 validation_error=0.1974012994
+depth=3 min_samples_leaf=5 validation_error=0.1974012994
+depth=3 min_samples_leaf=10 validation_error=0.1974012994
+depth=3 min_samples_leaf=20 validation_error=0.1974012994
+depth=4 min_samples_leaf=1 validation_error=0.2128935532
+depth=4 min_samples_leaf=5 validation_error=0.2128935532
+depth=4 min_samples_leaf=10 validation_error=0.2128935532
+depth=4 min_samples_leaf=20 validation_error=0.2143928036
+depth=5 min_samples_leaf=1 validation_error=0.2098950525
+depth=5 min_samples_leaf=5 validation_error=0.2098950525
+depth=5 min_samples_leaf=10 validation_error=0.2093953023
+depth=5 min_samples_leaf=20 validation_error=0.2078960520
+depth=6 min_samples_leaf=1 validation_error=0.2163918041
+depth=6 min_samples_leaf=5 validation_error=0.2163918041
+depth=6 min_samples_leaf=10 validation_error=0.2158920540
+depth=6 min_samples_leaf=20 validation_error=0.2133933033
+depth=7 min_samples_leaf=1 validation_error=0.2178910545
+depth=7 min_samples_leaf=5 validation_error=0.2183908046
+depth=7 min_samples_leaf=10 validation_error=0.2173913043
+depth=7 min_samples_leaf=20 validation_error=0.2113943028
+depth=8 min_samples_leaf=1 validation_error=0.2188905547
+depth=8 min_samples_leaf=5 validation_error=0.2208895552
+depth=8 min_samples_leaf=10 validation_error=0.2198900550
+depth=8 min_samples_leaf=20 validation_error=0.2093953023

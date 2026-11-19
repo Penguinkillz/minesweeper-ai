@@ -1,1 +1,1 @@
-"""Minesweeper project. Stage 3 adds the MCMC agent beside the CLP agent."""
+"""Minesweeper project. Stage 4 adds the decision-tree agent beside CLP and MCMC."""
