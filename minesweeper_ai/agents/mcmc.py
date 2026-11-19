@@ -83,6 +83,10 @@ class MCMCResult:
         hidden_cells: tuple[Cell, ...],
         retained_states: tuple[tuple[int, ...], ...] | None,
         initial_assignment: dict[Cell, int] | None,
+        retained_local_updates: int = 0,
+        retained_local_updates_changed: int = 0,
+        discarded_local_updates: int = 0,
+        discarded_local_updates_changed: int = 0,
     ) -> None:
         if regime not in (REGIME_EXACT, REGIME_LOCAL):
             raise ValueError(f"unknown regime {regime}")
@@ -102,6 +106,12 @@ class MCMCResult:
         self.hidden_cells = hidden_cells
         self.retained_states = retained_states
         self.initial_assignment = initial_assignment
+        # Observational counts for the evaluation log. They are not inputs
+        # to the decision, and they are not a convergence diagnostic.
+        self.retained_local_updates = retained_local_updates
+        self.retained_local_updates_changed = retained_local_updates_changed
+        self.discarded_local_updates = discarded_local_updates
+        self.discarded_local_updates_changed = discarded_local_updates_changed
 
 
 class FrontierSearchTruncated(Exception):
@@ -346,7 +356,7 @@ def _sweep(
     bits: list[int],
     rng: random.Random,
     self_loop_probability: float,
-) -> None:
+) -> tuple[int, int]:
     """One sweep: one attempted local update per hidden cell.
 
     Each attempt stays put with the self-loop probability, and otherwise
@@ -354,15 +364,29 @@ def _sweep(
     probability. The self-loop is an identity kernel. Mixed with either
     Gibbs kernel, the uniform distribution on legal layouts stays stationary.
     The mixture does not establish irreducibility.
+
+    The return value is ``(attempted, changed)``. An attempt changed the
+    state when the hidden-cell bits differ after it. The comparison copies
+    the bits and draws no random number, so the kernels and the acceptance
+    rule are unchanged. A self-loop, a kernel with nothing to resample, and
+    a conditional draw of the current assignment all count as attempts that
+    did not change the state.
     """
+    attempted = 0
+    changed = 0
     hidden_count = len(position.hidden)
     for _ in range(hidden_count):
+        attempted += 1
+        before = tuple(bits)
         if rng.random() < self_loop_probability:
-            continue
-        if rng.random() < 0.5:
+            pass
+        elif rng.random() < 0.5:
             _pair_update(position, bits, rng)
         else:
             _neighbourhood_update(position, bits, rng)
+        if tuple(bits) != before:
+            changed += 1
+    return attempted, changed
 
 
 def _pair_update(position: _Position, bits: list[int], rng: random.Random) -> None:
@@ -412,6 +436,10 @@ def _regime_a(state: VisibleState, enumerated: QueryResult) -> MCMCResult:
         hidden_cells=hidden,
         retained_states=None,
         initial_assignment=None,
+        retained_local_updates=0,
+        retained_local_updates_changed=0,
+        discarded_local_updates=0,
+        discarded_local_updates_changed=0,
     )
 
 
@@ -486,12 +514,20 @@ def _regime_b(
         raise RuntimeError("the CLP initialiser returned a layout the clues reject")
     counts = [0 for _ in position.hidden]
     recorded_during_burn_in = 0
+    discarded_attempted = 0
+    discarded_changed = 0
     for _ in range(burn_in_sweeps):
-        _sweep(position, bits, rng, self_loop_probability)
+        attempted, changed = _sweep(position, bits, rng, self_loop_probability)
+        discarded_attempted += attempted
+        discarded_changed += changed
     recorded = 0
+    retained_attempted = 0
+    retained_changed = 0
     kept: list[tuple[int, ...]] = []
     for _ in range(retained_sweeps):
-        _sweep(position, bits, rng, self_loop_probability)
+        attempted, changed = _sweep(position, bits, rng, self_loop_probability)
+        retained_attempted += attempted
+        retained_changed += changed
         recorded += 1
         for index, bit in enumerate(bits):
             counts[index] += bit
@@ -535,6 +571,10 @@ def _regime_b(
         hidden_cells=position.hidden,
         retained_states=tuple(kept) if keep_states else None,
         initial_assignment=dict(assignment),
+        retained_local_updates=retained_attempted,
+        retained_local_updates_changed=retained_changed,
+        discarded_local_updates=discarded_attempted,
+        discarded_local_updates_changed=discarded_changed,
     )
 
 
