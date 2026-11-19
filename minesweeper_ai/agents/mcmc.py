@@ -17,13 +17,14 @@ illegal layout, and it never reads the hidden mine map.
 Single-site Gibbs is not this agent. On the two-cell clue it cannot leave
 its start state. The unit test runs that chain. The player uses a block.
 
-Regime A is one full-block conditional, computed from a finished frontier
-enumeration and the binomial residual weights. It runs only when ``|F| <= 16``
-and the enumeration finishes. Marginal 0 is proved safe. Marginal 1 is proved
-mine. There is no burn-in and no local chain.
+Regime A computes exact posterior marginals from a finished frontier
+enumeration and the binomial residual weights. It does not draw a layout.
+It runs only when ``|F| <= 16`` and the enumeration finishes. Marginal 0 is
+proved safe. Marginal 1 is proved mine. There is no burn-in and no local chain.
 
-Regime B is the pair kernel and the clue-neighbourhood kernel, mixed with a
-self-loop. It runs when Regime A does not. Every reveal is estimated. The
+Regime B is stochastic block Gibbs: the pair kernel and the clue-neighbourhood
+kernel, mixed with a self-loop. It runs when Regime A does not, and only from
+a legal start found within the same node cap. Every reveal is estimated. The
 text does not claim convergence and does not claim a unique stationary
 distribution.
 """
@@ -48,9 +49,9 @@ BURN_IN_SWEEPS = 50
 RETAINED_SWEEPS = 200
 SELF_LOOP_PROBABILITY = 0.05
 
-REGIME_EXACT = "exact_redraw"
+REGIME_EXACT = "exact_marginals"
 REGIME_LOCAL = "local_only"
-EXACT_REDRAW_TEXT = "exact redraw"
+EXACT_MARGINAL_TEXT = "exact marginal enumeration"
 LOCAL_ONLY_TEXT = "local block Gibbs only"
 LOCAL_KERNELS = ("pair", "clue-neighbourhood")
 
@@ -103,13 +104,31 @@ class MCMCResult:
         self.initial_assignment = initial_assignment
 
 
+class FrontierSearchTruncated(Exception):
+    """The legal-start search hit its node cap before accepting a frontier.
+
+    The clues may still have a legal layout. This is a truncated search, not
+    ``UnsatisfiablePosition``, and no click is invented from it.
+    """
+
+    def __init__(self, node_limit: int, nodes: int) -> None:
+        self.node_limit = node_limit
+        self.nodes = nodes
+        super().__init__(
+            f"Legal-start frontier search stopped at node limit {node_limit} "
+            f"after {nodes} frontier attempts, before any frontier was accepted. "
+            "The search was truncated. No click is invented."
+        )
+
+
 class MCMCAgent:
     """Play from ``VisibleState`` only.
 
-    ``exact_redraw`` switches Regime A off so a fixture whose frontier is
-    small enough for an exact redraw can still be scored as a local walk.
-    ``node_limit`` is the frontier node cap from the CLP search. Hitting it
-    discards the enumeration, and the decision is Regime B.
+    ``exact_marginals`` switches the weighted enumeration off, so a small
+    frontier can still be scored as a stochastic Gibbs walk.
+    ``node_limit`` caps frontier value attempts. The enumeration and the
+    legal-start search each have their own counter, and both use this cap.
+    ``None`` means neither search is capped.
     """
 
     def __init__(
@@ -117,7 +136,7 @@ class MCMCAgent:
         sampler_seed: int = 0,
         node_limit: int | None = None,
         *,
-        exact_redraw: bool = True,
+        exact_marginals: bool = True,
         burn_in_sweeps: int = BURN_IN_SWEEPS,
         retained_sweeps: int = RETAINED_SWEEPS,
         self_loop_probability: float = SELF_LOOP_PROBABILITY,
@@ -129,7 +148,7 @@ class MCMCAgent:
             raise ValueError("self-loop probability must lie in [0, 1]")
         self.sampler_seed = sampler_seed
         self.node_limit = node_limit
-        self.exact_redraw = exact_redraw
+        self.exact_marginals = exact_marginals
         self.burn_in_sweeps = burn_in_sweeps
         self.retained_sweeps = retained_sweeps
         self.self_loop_probability = self_loop_probability
@@ -148,19 +167,25 @@ class MCMCAgent:
         # Regime A is the finished full-block conditional. A larger frontier,
         # a truncated search, or an explicit switch falls through to Regime B
         # without using any partial weights.
-        if self.exact_redraw and frontier_size <= FRONTIER_EXACT_LIMIT:
+        if self.exact_marginals and frontier_size <= FRONTIER_EXACT_LIMIT:
             enumerated = clp.query(state, self.node_limit)
             if enumerated.unsatisfiable:
                 _raise_unsatisfiable()
             if enumerated.finished:
                 return _regime_a(state, enumerated)
-        assignment = _first_legal_assignment(state)
-        if assignment is None:
+        # Separate counter, same cap. This search stops at the first accepted
+        # frontier, so it can succeed after the full enumeration was truncated.
+        start = _first_legal_assignment(state, self.node_limit)
+        if start.status == "truncated":
+            if self.node_limit is None:
+                raise RuntimeError("an uncapped legal-start search was marked truncated")
+            raise FrontierSearchTruncated(self.node_limit, start.nodes)
+        if start.assignment is None:
             _raise_unsatisfiable()
         return _regime_b(
             state,
             frontier_size,
-            assignment,
+            start.assignment,
             random.Random(self.sampler_seed),
             self.burn_in_sweeps,
             self.retained_sweeps,
@@ -513,24 +538,49 @@ def _regime_b(
     )
 
 
-def _first_legal_assignment(state: VisibleState) -> dict[Cell, int] | None:
-    """One legal layout from the CLP frontier search.
+class _LegalStart:
+    """Outcome of one capped search for a single legal layout.
+
+    ``found`` means a frontier was accepted at or before the cap.
+    ``unsatisfiable`` means the tree was exhausted, or propagation failed,
+    and nothing was accepted. ``truncated`` means the next frontier attempt
+    would have passed the cap. Truncation is not an empty solution set.
+    """
+
+    def __init__(self, assignment: dict[Cell, int] | None, status: str, nodes: int) -> None:
+        self.assignment = assignment
+        self.status = status
+        self.nodes = nodes
+
+
+def _first_legal_assignment(state: VisibleState, node_limit: int | None) -> _LegalStart:
+    """One legal layout from the CLP frontier search, under ``node_limit``.
 
     Labeling uses the same variable order and value order as ``clp.query``:
-    unfixed frontier cells, row-major, trying 0 and then 1. The search stops
-    at the first frontier the residual accepts. The interior witness places
-    those ``r`` mines on the row-major first unfixed interior cells. It is
-    one placement, not a tour of ``C(|U|, r)``, and Regime B does not report
-    it as a posterior draw.
+    unfixed frontier cells, row-major, trying 0 and then 1. A frontier value
+    attempt is one node, and a cell propagation has already fixed is not.
+    ``None`` runs until the first accepted frontier or the tree is exhausted.
+
+    The search stops at the first frontier the residual accepts. It does not
+    continue, so this cap is not a second unlimited enumeration. The interior
+    witness places those ``r`` mines on the row-major first unfixed interior
+    cells. It is one placement, not a tour of ``C(|U|, r)``, and Regime B
+    does not report it as a posterior draw.
+
+    Propagation that fails before any attempt is ``unsatisfiable`` even when
+    the cap is 0: no frontier node was required. Hitting the cap before an
+    accept is ``truncated``.
     """
     domains, frontier, interior, constraints, watches = clp._build_model(state)
     if not clp.propagate(domains, constraints, watches):
-        return None
+        return _LegalStart(None, "unsatisfiable", 0)
     propagated = {cell: frozenset(values) for cell, values in domains.items()}
     order = tuple(cell for cell in frontier if len(domains[cell]) > 1)
     flexible = tuple(cell for cell in interior if propagated[cell] == frozenset((0, 1)))
     fixed_interior_mines = sum(1 for cell in interior if propagated[cell] == frozenset((1,)))
     found: dict[Cell, int] | None = None
+    nodes = 0
+    truncated = False
 
     def accept() -> dict[Cell, int] | None:
         frontier_mines = 0
@@ -567,8 +617,8 @@ def _first_legal_assignment(state: VisibleState) -> dict[Cell, int] | None:
         return assignment
 
     def search(index: int) -> None:
-        nonlocal found
-        if found is not None:
+        nonlocal found, nodes, truncated
+        if truncated or found is not None:
             return
         if index == len(order):
             found = accept()
@@ -580,10 +630,14 @@ def _first_legal_assignment(state: VisibleState) -> dict[Cell, int] | None:
             search(index + 1)
             return
         for value in (0, 1):
-            if found is not None:
+            if truncated or found is not None:
                 return
             if value not in domains[cell]:
                 continue
+            nodes += 1
+            if node_limit is not None and nodes > node_limit:
+                truncated = True
+                return
             saved = {item: set(values) for item, values in domains.items()}
             domains[cell] = {value}
             if clp.propagate(domains, constraints, watches):
@@ -592,7 +646,11 @@ def _first_legal_assignment(state: VisibleState) -> dict[Cell, int] | None:
             domains.update({item: set(values) for item, values in saved.items()})
 
     search(0)
-    return found
+    if found is not None:
+        return _LegalStart(found, "found", nodes)
+    if truncated:
+        return _LegalStart(None, "truncated", nodes)
+    return _LegalStart(None, "unsatisfiable", nodes)
 
 
 def _exact_status(cell: Cell, marginal: Fraction) -> tuple[DecisionStatus, Action]:
@@ -627,9 +685,10 @@ def _explain_exact(
     else:
         proof = "The exact marginal is neither 0 nor 1, so the reveal is estimated and uncertain."
     return (
-        f"{EXACT_REDRAW_TEXT}. |F| = {frontier_size}. "
+        f"{EXACT_MARGINAL_TEXT}. |F| = {frontier_size}. "
         f"Binomial weights {listed}. Total weight {total}. "
-        f"Exact marginal of {_fmt(cell)} is {marginal}. {proof}"
+        f"Exact marginal of {_fmt(cell)} is {marginal}. "
+        f"No full assignment was drawn. {proof}"
     )
 
 
@@ -649,7 +708,7 @@ def _explain_local(
         f"Retained sweeps {retained_sweeps}. Discarded sweeps {discarded_sweeps}. "
         f"Kernels: {kernels}. Self-loop probability {self_loop_probability:.2f}. "
         f"Sample frequency of {_fmt(cell)} is {frequency}. "
-        "This is a walk average. "
+        "Stochastic Gibbs sampling. This is a walk average. "
         "Each kernel satisfies detailed balance for the uniform distribution on the legal layouts, "
         "and that distribution is a stationary distribution of the walk. "
         "Status estimated."
@@ -743,15 +802,15 @@ def main() -> None:
     different_residuals = pattern(1, 7, 2, {(0, 1): 1, (0, 3): 1})
     _print_trace("Two-cell pattern, Regime A.", two_cell, MCMCAgent())
     _print_trace(
-        "Two-cell pattern, Regime B, exact redraw switched off.",
+        "Two-cell pattern, Regime B, exact marginal enumeration switched off.",
         two_cell,
-        MCMCAgent(exact_redraw=False),
+        MCMCAgent(exact_marginals=False),
     )
     _print_trace("Different residuals, Regime A. Weights are binomial, not equal.", different_residuals, MCMCAgent())
     _print_trace(
-        "Different residuals, Regime B.",
+        "Different residuals, Regime B, stochastic Gibbs only.",
         different_residuals,
-        MCMCAgent(exact_redraw=False),
+        MCMCAgent(exact_marginals=False),
     )
 
     game = Game(seed=PUBLISHED_BEGINNER_SEED)
