@@ -77,6 +77,19 @@ def is_uncertain_reveal(record: Mapping[str, object]) -> bool:
     return is_reveal(record) and not is_guaranteed_safe(record)
 
 
+def is_uncertain_post_opening_reveal(record: Mapping[str, object]) -> bool:
+    """An uncertain reveal after the environment's opening move.
+
+    Decision 0 is that opening reveal. The environment places the mines and
+    keeps the clicked cell safe, so it is not a guess the agent had to risk.
+    Later reveals whose status is not a finished proof are the guesses.
+    """
+    index = record.get("decision_index")
+    if isinstance(index, bool) or not isinstance(index, int) or index < 1:
+        return False
+    return is_uncertain_reveal(record)
+
+
 def summarize(records: Sequence[Mapping[str, object]]) -> dict[str, object]:
     """Build the section 9 table from log records alone.
 
@@ -144,8 +157,9 @@ def summary_csv(summary: Mapping[str, object]) -> str:
         raise ValueError("summary has no agents")
     header = (
         "agent,games,wins,losses,aborted,win_rate,loss_rate,reveals,mine_hits,"
-        "mine_hit_rate,average_reveals,guaranteed_safe_reveals,uncertain_reveals,"
-        "mean_game_seconds,mean_decision_seconds,truncated_decisions"
+        "mine_hit_rate,uncertain_post_opening_reveals,uncertain_post_opening_mine_hits,"
+        "uncertain_post_opening_mine_hit_rate,average_reveals,guaranteed_safe_reveals,"
+        "uncertain_reveals,mean_game_seconds,mean_decision_seconds,truncated_decisions"
     )
     lines = [header]
     for name, raw in agents.items():
@@ -164,6 +178,9 @@ def summary_csv(summary: Mapping[str, object]) -> str:
                     _cell(raw, "reveals"),
                     _cell(raw, "mine_hits"),
                     _cell(raw, "mine_hit_rate"),
+                    _cell(raw, "uncertain_post_opening_reveals"),
+                    _cell(raw, "uncertain_post_opening_mine_hits"),
+                    _cell(raw, "uncertain_post_opening_mine_hit_rate"),
                     _cell(raw, "average_reveals"),
                     _cell(raw, "guaranteed_safe_reveals"),
                     _cell(raw, "uncertain_reveals"),
@@ -182,14 +199,14 @@ def format_markdown(summary: Mapping[str, object]) -> str:
     if not isinstance(agents, dict):
         raise ValueError("summary has no agents")
     lines = [
-        "| Agent | Games | Wins | Losses | Aborted | Win rate | Loss rate | Mine-hit rate | Average reveals | Guaranteed-safe reveals | Uncertain reveals | Mean game seconds | Mean decision seconds |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Agent | Games | Wins | Losses | Aborted | Win rate | Loss rate | Mine-hit rate | Uncertain post-opening mine-hit rate | Average reveals | Guaranteed-safe reveals | Uncertain reveals | Mean game seconds | Mean decision seconds |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for name, raw in agents.items():
         if not isinstance(raw, dict):
             continue
         lines.append(
-            "| {agent} | {games} | {wins} | {losses} | {aborted} | {win_rate} | {loss_rate} | {mine_hit_rate} | {average_reveals} | {guaranteed_safe_reveals} | {uncertain_reveals} | {mean_game_seconds} | {mean_decision_seconds} |".format(
+            "| {agent} | {games} | {wins} | {losses} | {aborted} | {win_rate} | {loss_rate} | {mine_hit_rate} | {uncertain_post_opening_mine_hit_rate} | {average_reveals} | {guaranteed_safe_reveals} | {uncertain_reveals} | {mean_game_seconds} | {mean_decision_seconds} |".format(
                 agent=name,
                 games=raw["games"],
                 wins=raw["wins"],
@@ -198,6 +215,7 @@ def format_markdown(summary: Mapping[str, object]) -> str:
                 win_rate=raw["win_rate"],
                 loss_rate=raw["loss_rate"],
                 mine_hit_rate=raw["mine_hit_rate"],
+                uncertain_post_opening_mine_hit_rate=raw["uncertain_post_opening_mine_hit_rate"],
                 average_reveals=raw["average_reveals"],
                 guaranteed_safe_reveals=raw["guaranteed_safe_reveals"],
                 uncertain_reveals=raw["uncertain_reveals"],
@@ -248,6 +266,8 @@ def _agent_summary(
     mine_hits = sum(1 for record in reveals if record.get("hit_mine") is True)
     guaranteed = sum(1 for record in reveals if is_guaranteed_safe(record))
     uncertain = sum(1 for record in reveals if is_uncertain_reveal(record))
+    post_opening = [record for record in reveals if is_uncertain_post_opening_reveal(record)]
+    post_opening_hits = sum(1 for record in post_opening if record.get("hit_mine") is True)
     truncated = sum(1 for record in decisions if record.get("search_truncated") is True)
     decision_seconds = _sum_floats(record.get("decision_seconds") for record in decisions)
     game_seconds = _sum_floats(record.get("game_seconds") for record in games)
@@ -262,6 +282,9 @@ def _agent_summary(
         "reveals": len(reveals),
         "mine_hits": mine_hits,
         "mine_hit_rate": _ratio(mine_hits, len(reveals)),
+        "uncertain_post_opening_reveals": len(post_opening),
+        "uncertain_post_opening_mine_hits": post_opening_hits,
+        "uncertain_post_opening_mine_hit_rate": _ratio(post_opening_hits, len(post_opening)),
         "average_reveals": _ratio(len(reveals), played),
         "guaranteed_safe_reveals": guaranteed,
         "uncertain_reveals": uncertain,

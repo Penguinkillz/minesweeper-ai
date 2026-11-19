@@ -34,6 +34,7 @@ from minesweeper_ai.evaluation.metrics import (
     summarize_log,
     write_log,
 )
+from minesweeper_ai.training.dataset import BEGINNER_SEEDS, assign_boards
 
 
 def _reveal(row: int, column: int, status: DecisionStatus, explanation: str) -> tuple[Action, Reasoning]:
@@ -76,8 +77,23 @@ class RevealSafe:
 
 
 class HarnessTests(unittest.TestCase):
-    def test_seed_list_is_the_published_prefix(self) -> None:
-        self.assertEqual(PHASE1_SEEDS, tuple(range(50)))
+    def test_seed_list_is_the_unused_range_after_stage_4(self) -> None:
+        self.assertEqual(PHASE1_SEEDS, tuple(range(100, 150)))
+
+    def test_evaluation_seeds_are_disjoint_from_the_stage4_splits(self) -> None:
+        evaluation = set(PHASE1_SEEDS)
+        self.assertTrue(evaluation.isdisjoint(BEGINNER_SEEDS))
+        assignment = assign_boards(BEGINNER_SEEDS)
+        train = {seed for seed, split in assignment.items() if split == "train"}
+        validation = {seed for seed, split in assignment.items() if split == "validation"}
+        test = {seed for seed, split in assignment.items() if split == "test"}
+        self.assertEqual(train, set(range(60)))
+        self.assertEqual(validation, set(range(60, 80)))
+        self.assertEqual(test, set(range(80, 100)))
+        self.assertTrue(evaluation.isdisjoint(train))
+        self.assertTrue(evaluation.isdisjoint(validation))
+        self.assertTrue(evaluation.isdisjoint(test))
+        self.assertTrue(evaluation.isdisjoint(range(60, 100)))
 
     def test_intermediate_board_is_refused(self) -> None:
         game = Game(rows=16, cols=16, mine_count=40, seed=0)
@@ -334,6 +350,33 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(clp["guaranteed_safe_reveals"], 1)
         self.assertEqual(clp["mine_hits"], 0)
 
+    def test_uncertain_post_opening_mine_hit_rate_excludes_the_opening_and_proofs(self) -> None:
+        records = [
+            {"record_type": "run", "seeds": [0], "agents": ["stub"]},
+            _game(agent="stub", outcome="lost"),
+            _decision(agent="stub", decision_index=0, status="fallback", uncertain=True, hit_mine=False),
+            _decision(
+                agent="stub",
+                decision_index=1,
+                status="proved_safe",
+                uncertain=False,
+                explanation="A singleton domain is a finished proof.",
+                hit_mine=True,
+            ),
+            _decision(agent="stub", decision_index=2, status="estimated", uncertain=True, hit_mine=True),
+            _decision(agent="stub", decision_index=3, status="fallback", uncertain=True, hit_mine=False),
+        ]
+        summary = summarize(records)
+        agents = summary["agents"]
+        assert isinstance(agents, dict)
+        row = agents["stub"]
+        assert isinstance(row, dict)
+        self.assertEqual(row["mine_hits"], 2)
+        self.assertEqual(row["mine_hit_rate"], "2/4")
+        self.assertEqual(row["uncertain_post_opening_reveals"], 2)
+        self.assertEqual(row["uncertain_post_opening_mine_hits"], 1)
+        self.assertEqual(row["uncertain_post_opening_mine_hit_rate"], "1/2")
+
     def test_mine_hit_rate_counts_losing_reveals_only(self) -> None:
         records = [
             {"record_type": "run", "seeds": [0], "agents": ["stub"]},
@@ -477,6 +520,7 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(decision["status"], "estimated")
         self.assertFalse(is_guaranteed_safe(decision))
         self.assertEqual(game_record["outcome"], "aborted")
+        self.assertGreater(decision["retained_local_updates_changed"], 0)
         summary = summarize(
             [
                 {"record_type": "run", "seeds": [2], "agents": ["MCMC"]},

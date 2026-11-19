@@ -2,8 +2,9 @@
 
 The three agents do not share a board and do not alternate moves. The log
 written here is the only input to the summary and the charts. Seeds are the
-integers 0 through 49, in that order. That list is fixed in this module. It
-is not revised after a run to change a ranking.
+integers 100 through 149, in that order. Stage 4 used 0 through 99, so this
+list does not repeat a training, validation, or test board. It is not
+revised after a run to change a ranking.
 
 Beginner rules only: 9×9 and 10 mines. An intermediate board is refused.
 The agents are the Stage 2, 3, and 4 defaults. CLP and MCMC are constructed
@@ -48,9 +49,10 @@ from minesweeper_ai.evaluation.metrics import (
     write_summary,
 )
 
-# First fifty non-negative integers, published before the log is read.
-# A seed is not added or removed because of how an agent finished.
-PHASE1_SEEDS: tuple[int, ...] = tuple(range(50))
+# The fifty integers after the Stage 4 boards. Stage 4 fits on seeds 0–99
+# (train 0–59, validation 60–79, test 80–99). These seeds are unused by that
+# split. They are not added or removed because of how an agent finished.
+PHASE1_SEEDS: tuple[int, ...] = tuple(range(100, 150))
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 LOG_PATH = RESULTS_DIR / "phase1_log.jsonl"

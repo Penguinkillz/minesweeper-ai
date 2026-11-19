@@ -336,19 +336,28 @@ def _resample_block(
     bits: list[int],
     block: tuple[int, ...],
     rng: random.Random,
-) -> None:
+) -> bool:
     """Draw the block from its full conditional and write it back.
 
     The proposal is that conditional, the cells outside the block are
     unchanged, and ``p(x_B | x_{-B}) p(x_{-B}) = p(x)``. The Metropolis–Hastings
     ratio is therefore 1, and the draw is always accepted.
+
+    The return value is whether any cell in ``block`` changed. Cells outside
+    the block are not inspected. The random draw happens before that
+    comparison, so the chain is the same as a write that does not report
+    the change.
     """
     legal = _legal_settings(position, bits, block)
     if not legal:
         raise RuntimeError("a legal layout has an empty block conditional")
     chosen = legal[rng.randrange(len(legal))]
+    changed = False
     for index, bit in zip(block, chosen):
-        bits[index] = bit
+        if bits[index] != bit:
+            bits[index] = bit
+            changed = True
+    return changed
 
 
 def _sweep(
@@ -365,44 +374,42 @@ def _sweep(
     Gibbs kernel, the uniform distribution on legal layouts stays stationary.
     The mixture does not establish irreducibility.
 
-    The return value is ``(attempted, changed)``. An attempt changed the
-    state when the hidden-cell bits differ after it. The comparison copies
-    the bits and draws no random number, so the kernels and the acceptance
-    rule are unchanged. A self-loop, a kernel with nothing to resample, and
-    a conditional draw of the current assignment all count as attempts that
-    did not change the state.
+    The return value is ``(attempted, changed)``. A pair or neighbourhood
+    update reports whether its own block changed. A self-loop, a kernel with
+    nothing to resample, and a conditional draw of the current assignment
+    count as attempts that did not change the state. No extra random number
+    is drawn to make that count.
     """
     attempted = 0
     changed = 0
     hidden_count = len(position.hidden)
     for _ in range(hidden_count):
         attempted += 1
-        before = tuple(bits)
         if rng.random() < self_loop_probability:
-            pass
-        elif rng.random() < 0.5:
-            _pair_update(position, bits, rng)
+            continue
+        if rng.random() < 0.5:
+            moved = _pair_update(position, bits, rng)
         else:
-            _neighbourhood_update(position, bits, rng)
-        if tuple(bits) != before:
+            moved = _neighbourhood_update(position, bits, rng)
+        if moved:
             changed += 1
     return attempted, changed
 
 
-def _pair_update(position: _Position, bits: list[int], rng: random.Random) -> None:
+def _pair_update(position: _Position, bits: list[int], rng: random.Random) -> bool:
     """Resample two hidden cells. This is the move that connects (1, 0) to (0, 1)."""
     if len(position.hidden) < 2:
-        return
+        return False
     first, second = rng.sample(range(len(position.hidden)), 2)
-    _resample_block(position, bits, (first, second), rng)
+    return _resample_block(position, bits, (first, second), rng)
 
 
-def _neighbourhood_update(position: _Position, bits: list[int], rng: random.Random) -> None:
+def _neighbourhood_update(position: _Position, bits: list[int], rng: random.Random) -> bool:
     """Resample the hidden neighbourhood of one revealed clue. Size at most 8."""
     if not position.neighbourhoods:
-        return
+        return False
     block = position.neighbourhoods[rng.randrange(len(position.neighbourhoods))]
-    _resample_block(position, bits, block, rng)
+    return _resample_block(position, bits, block, rng)
 
 
 def _regime_a(state: VisibleState, enumerated: QueryResult) -> MCMCResult:
