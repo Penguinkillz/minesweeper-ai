@@ -1,1 +1,1 @@
-"""Environment tests and the Stage 2 CLP tests."""
+"""Environment tests, the CLP tests, and the MCMC tests."""

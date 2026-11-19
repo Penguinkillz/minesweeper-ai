@@ -1,1 +1,1 @@
-"""Minesweeper project. Stage 2 adds the CLP agent on top of the environment."""
+"""Minesweeper project. Stage 3 adds the MCMC agent beside the CLP agent."""

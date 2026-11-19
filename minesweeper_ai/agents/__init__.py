@@ -1,1 +1,1 @@
-"""Agents. Stage 2 is the CLP agent. MCMC and the decision tree are later stages."""
+"""Agents. Stage 2 is the CLP agent. Stage 3 is the MCMC Gibbs sampler."""
