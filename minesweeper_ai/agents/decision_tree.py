@@ -118,10 +118,25 @@ def threshold_candidates(labels: Sequence[int], values: Sequence[float]) -> list
     return candidates
 
 
-def best_threshold(labels: Sequence[int], values: Sequence[float]) -> tuple[float, float] | None:
-    """``(threshold, IG*)``. Ties keep the smaller midpoint. ``None`` if no cut exists."""
+def best_threshold(
+    labels: Sequence[int],
+    values: Sequence[float],
+    min_samples_leaf: int = 1,
+) -> tuple[float, float] | None:
+    """``(threshold, IG*)``. Ties keep the smaller midpoint. ``None`` if no cut exists.
+
+    A threshold is skipped when either side would hold fewer than
+    ``min_samples_leaf`` examples. The next midpoint is then the candidate.
+    """
+    if min_samples_leaf < 1:
+        raise ValueError("min_samples_leaf must be at least 1")
+    total = len(values)
     best: tuple[float, float] | None = None
     for threshold in threshold_candidates(labels, values):
+        left = sum(value < threshold for value in values)
+        right = total - left
+        if left < min_samples_leaf or right < min_samples_leaf:
+            continue
         gain = _threshold_gain(labels, values, threshold)
         if best is None or gain > best[1] or (gain == best[1] and threshold < best[0]):
             best = (threshold, gain)
@@ -293,7 +308,10 @@ def fit(
 
     Depth 0 is the root. A node at ``depth >= max_depth`` is a leaf, so ``max_depth``
     1 is one split. A node with fewer than ``min_samples_leaf`` records is a leaf.
-    A split whose best gain is 0 is still made, unless ``stop_on_zero_gain`` is set.
+    A split is kept only when every child has at least ``min_samples_leaf`` records.
+    An illegal candidate is skipped and the next-best legal split is used. If none
+    remain, the node is a leaf. A split whose best legal gain is 0 is still made,
+    unless ``stop_on_zero_gain`` is set.
     """
     if max_depth < 0:
         raise ValueError("max_depth must be non-negative")
@@ -350,10 +368,14 @@ def _fit_node(
     for index in varying:
         column = columns[index]
         if feature_kinds[index] is FeatureKind.DISCRETE:
+            # One branch per observed value. The split is illegal if any branch
+            # would hold fewer than min_samples_leaf rows.
+            if any(count < min_samples_leaf for count in Counter(column).values()):
+                continue
             gain = information_gain(labels, column)
             proposal = ("discrete", index, None, gain)
         else:
-            found = best_threshold(labels, column)
+            found = best_threshold(labels, column, min_samples_leaf)
             if found is None:
                 continue
             threshold, gain = found
@@ -371,6 +393,8 @@ def _fit_node(
         groups: dict[int, list[object]] = defaultdict(list)
         for example in examples:
             groups[example.features[index]].append(example)
+        if any(len(group) < min_samples_leaf for group in groups.values()):
+            raise RuntimeError("a discrete split kept a child below min_samples_leaf")
         branches = {
             value: _fit_node(
                 group,
@@ -387,6 +411,8 @@ def _fit_node(
 
     left = [example for example in examples if example.features[index] < threshold]
     right = [example for example in examples if example.features[index] >= threshold]
+    if len(left) < min_samples_leaf or len(right) < min_samples_leaf:
+        raise RuntimeError("a threshold split kept a side below min_samples_leaf")
     return ThresholdNode(
         index,
         threshold if threshold is not None else 0.0,

@@ -44,7 +44,7 @@ Source decks: `19-AI-DecisionTree.pdf` for the tree, and `17-AI-BasicML.pdf` for
 
 **Thresholds.** One branch per raw numeric value is rejected. The candidates are midpoints between consecutive distinct values. A midpoint whose two neighbouring value groups are both pure and the same class is dropped, because that cut cannot be the unique optimum. The winning threshold is still the one with the best gain. Ties keep the smaller midpoint.
 
-**Overfitting controls.** With no label noise, an unregularised tree can drive training error to 0 and still fail on new boards. The controls used here are a fixed depth and a minimum number of records in a node. Random forests are out of scope. Pruning after a full tree is the deck's other remedy for the rejected gain cutoff. This project does not also prune, so the measured errors belong to depth and leaf size.
+**Overfitting controls.** With no label noise, an unregularised tree can drive training error to 0 and still fail on new boards. The controls used here are a fixed depth and a minimum number of records in a leaf. A node with fewer than `min_samples_leaf` records is a leaf. A split is also refused when any child would have fewer than that many records: a discrete split needs every value group to be large enough, and a threshold needs both sides to be large enough. Illegal candidates are skipped and the next-best legal split is used. If none remain, the node is a leaf. Random forests are out of scope. Pruning after a full tree is the deck's other remedy for the rejected gain cutoff. This project does not also prune, so the measured errors belong to depth and leaf size.
 
 **Train, validation, test.** Train updates the tree. Validation chooses `max_depth` and `min_samples_leaf` from depths 1…8 and leaf minimums 1, 5, 10, 20. The lowest validation error is kept. A tie keeps the smaller depth, then the smaller leaf minimum. The test error is computed by `test_error`, which accepts the fitted tree and the test rows and does not accept the training rows. The empty tree is the majority class on the training counts, with depth 0 so it cannot split. That is the baseline that ignores the features.
 
@@ -74,7 +74,7 @@ The 100 board ids are sorted and assigned before any tree is fit: boards 0–59 
 
 These figures are the output of `python -m minesweeper_ai.training.train_tree`, copied from `minesweeper_ai/training/metrics.txt`. They are not constants in the learner, and they were not chosen to hit a win rate. Error is the fraction of frontier examples whose majority class is wrong.
 
-The validation grid selected `max_depth=2` and `min_samples_leaf=1`. At depth 2 the four leaf minimums had the same validation error, and the same splits, so the tie-break recorded the smaller minimum. The printed tree is 45 lines.
+The validation grid selected `max_depth=2` and `min_samples_leaf=1`. At depth 2 the four leaf minimums had the same validation error, and the same splits, so the tie-break recorded the smaller minimum. The printed tree is 45 lines. Requiring every child to meet the leaf minimum does not change that tree: its smallest child already has more than 20 rows. Deeper grid rows with a leaf minimum above 1 do change, and those validation errors are in `metrics.txt`. The three error rates below are the same after that rule.
 
 | Split | Examples | Error |
 | --- | --- | --- |
@@ -110,7 +110,7 @@ From the repository root, with Python 3:
 python -m minesweeper_ai.training.train_tree
 ```
 
-The process regenerates the 100 boards, refits the grid, prints the three errors and the depth-1 tree, and rewrites the pickle, the text tree, and `metrics.txt`. It exits with status 1 if a depth-8 tree has a higher training error than the depth-1 tree, or if the reloaded pickle disagrees with the tree just fit. Loading the saved agent without refitting is `DecisionTreeAgent.from_saved()`.
+The process regenerates the 100 boards, refits the grid, prints the three errors and the depth-1 tree, and rewrites the pickle, the text tree, and `metrics.txt`. The test rows are walked once. That walk records the selected tree's error, its class-wise counts, and the empty-tree error. The saved pickle is checked by comparing the printed tree, not by scoring the test rows again. The process exits with status 1 if a depth-8 tree has a higher training error than the depth-1 tree, or if the reloaded text disagrees with the tree just fit. Loading the saved agent without refitting is `DecisionTreeAgent.from_saved()`.
 
 ## How to test
 
@@ -120,7 +120,7 @@ From the repository root:
 python3 -m unittest discover -s minesweeper_ai/tests -v
 ```
 
-That command runs the Stage 1 environment tests, the Stage 2 CLP tests, the Stage 3 MCMC tests, and the Stage 4 tree tests together. The run for this stage was 104 tests, result **OK** (pass).
+That command runs the Stage 1 environment tests, the Stage 2 CLP tests, the Stage 3 MCMC tests, and the Stage 4 tree tests together. The run for this stage was 107 tests, result **OK** (pass).
 
 The tree tests cover:
 
@@ -128,6 +128,9 @@ The tree tests cover:
 - information gain on a five-row table matches the hand formula
 - a threshold is a midpoint between sorted values, a repeated value is not split in the middle, and a cut between two pure groups of the same class is not the selected threshold
 - XOR has information gain 0 on each attribute, is learned at depth 2 when a 0-gain split is allowed, and is not learned when the rejected base case three is switched on
+- a discrete split with a value group smaller than `min_samples_leaf` is refused, and the next legal feature is used; if no legal discrete split remains, the node is a leaf
+- a threshold that would leave one side below `min_samples_leaf` is refused, and the next legal midpoint is used; if none remain, the node is a leaf
+- the training script scores the held-out rows in one pass and does not call `predict` while checking the reloaded tree
 - a deeper tree's training error is not higher than a shallower tree's
 - no board id, and no cell of one board, appears in two splits; the 100 seeds fall 60 / 20 / 20
 - every generated row is a frontier cell, an empty frontier emits nothing, and the label is not a column of the feature matrix
@@ -148,7 +151,7 @@ These are dataset and tie details the slides do not specify. They are recorded h
 - One hundred seeds, `0` through `99`, and eight snapshots per board. The first click is `(0, 0)`. Each later oracle click is the row-major first hidden cell that is safe. The generator places no flags.
 - The board split is the sorted board id, not a random shuffle. Sixty percent, then twenty, then the remainder, by integer division.
 - Equal information gain keeps the earlier feature in the section 6.3 order, then the smaller threshold. Equal validation error keeps the smaller depth, then the smaller `min_samples_leaf`.
-- The root is depth 0. `max_depth` 1 allows one split. A node with fewer than `min_samples_leaf` records is a leaf. A node of exactly that size may split.
+- The root is depth 0. `max_depth` 1 allows one split. A node with fewer than `min_samples_leaf` records is a leaf. A split is kept only when every child also has at least that many records. A node of exactly that size cannot split, because two children cannot both be that large.
 - A discrete value that was never seen on a branch stops the walk at that node and uses the node's own counts. There is no branch to follow.
 - A revealed clue of 0 next to a hidden cell would be stored as `min_clue` 0. Flood-fill on an unflagged board opens those neighbours, so the generated rows do not rely on that case.
 

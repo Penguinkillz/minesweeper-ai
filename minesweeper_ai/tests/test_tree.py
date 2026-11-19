@@ -16,6 +16,7 @@ from minesweeper_ai.agents.decision_tree import (
     DiscreteNode,
     FeatureKind,
     Leaf,
+    ThresholdNode,
     best_threshold,
     entropy,
     features_for_cell,
@@ -40,8 +41,10 @@ from minesweeper_ai.training.dataset import (
 from minesweeper_ai.training.train_tree import (
     DEPTH1_TEXT_PATH,
     TREE_TEXT_PATH,
+    _held_out_pass,
     classification_error,
     error_counts,
+    run_training,
     select_hyperparameters,
     test_error,
 )
@@ -184,6 +187,100 @@ class XorTests(unittest.TestCase):
         self.assertEqual(shallow_wrong, 2)
         self.assertEqual(deep_wrong, 0)
         self.assertLessEqual(deep_wrong, shallow_wrong)
+
+
+class MinSamplesLeafTests(unittest.TestCase):
+    def test_discrete_split_rejects_a_child_below_the_minimum(self) -> None:
+        # Feature a separates the labels but one value occurs once.
+        # Feature b is an equally pure split whose groups are large enough.
+        # Gain ties, so the earlier feature would win if the tiny child were allowed.
+        rows = [Example(0, 0, index, 0, (0, 0), 0) for index in range(5)]
+        rows.extend(Example(0, 0, index, 0, (1, 1), 1) for index in range(5, 10))
+        rows.append(Example(0, 0, 10, 0, (2, 0), 0))
+        names = ("a", "b")
+        kinds = (FeatureKind.DISCRETE, FeatureKind.DISCRETE)
+
+        unrestricted = fit(rows, max_depth=1, min_samples_leaf=1, feature_names=names, feature_kinds=kinds)
+        self.assertIsInstance(unrestricted.root, DiscreteNode)
+        assert isinstance(unrestricted.root, DiscreteNode)
+        self.assertEqual(unrestricted.root.feature_index, 0)
+        self.assertEqual(_node_count(unrestricted.root.branches[2]), 1)
+
+        restricted = fit(rows, max_depth=1, min_samples_leaf=3, feature_names=names, feature_kinds=kinds)
+        self.assertIsInstance(restricted.root, DiscreteNode)
+        assert isinstance(restricted.root, DiscreteNode)
+        self.assertEqual(restricted.root.feature_index, 1)
+        self.assertTrue(restricted.root.branches)
+        for child in restricted.root.branches.values():
+            self.assertGreaterEqual(_node_count(child), 3)
+
+        narrow = [
+            Example(0, 0, index, 0, (row.features[0],), row.label)
+            for index, row in enumerate(rows)
+        ]
+        only_illegal = fit(
+            narrow,
+            max_depth=1,
+            min_samples_leaf=3,
+            feature_names=("a",),
+            feature_kinds=(FeatureKind.DISCRETE,),
+        )
+        self.assertIsInstance(only_illegal.root, Leaf)
+
+    def test_continuous_split_rejects_a_side_below_the_minimum(self) -> None:
+        # The higher-gain cut isolates one mine. The next midpoint keeps both
+        # sides at two or more rows and has lower gain.
+        labels = [1, 0, 0, 0, 1, 0]
+        values = [0.0, 1.0, 1.0, 1.0, 2.0, 2.0]
+        unrestricted = best_threshold(labels, values, min_samples_leaf=1)
+        self.assertIsNotNone(unrestricted)
+        assert unrestricted is not None
+        self.assertEqual(unrestricted[0], 0.5)
+        legal = best_threshold(labels, values, min_samples_leaf=2)
+        self.assertIsNotNone(legal)
+        assert legal is not None
+        self.assertEqual(legal[0], 1.5)
+        self.assertIsNone(best_threshold(labels, values, min_samples_leaf=3))
+
+        rows = [Example(0, 0, index, 0, (value,), label) for index, (value, label) in enumerate(zip(values, labels))]
+        names = ("x",)
+        kinds = (FeatureKind.CONTINUOUS,)
+        small_side = fit(rows, max_depth=1, min_samples_leaf=1, feature_names=names, feature_kinds=kinds)
+        self.assertIsInstance(small_side.root, ThresholdNode)
+        assert isinstance(small_side.root, ThresholdNode)
+        self.assertEqual(small_side.root.threshold, 0.5)
+        self.assertEqual(_node_count(small_side.root.less), 1)
+
+        kept = fit(rows, max_depth=1, min_samples_leaf=2, feature_names=names, feature_kinds=kinds)
+        self.assertIsInstance(kept.root, ThresholdNode)
+        assert isinstance(kept.root, ThresholdNode)
+        self.assertEqual(kept.root.threshold, 1.5)
+        self.assertGreaterEqual(_node_count(kept.root.less), 2)
+        self.assertGreaterEqual(_node_count(kept.root.greater_or_equal), 2)
+
+        refused = fit(rows, max_depth=1, min_samples_leaf=3, feature_names=names, feature_kinds=kinds)
+        self.assertIsInstance(refused.root, Leaf)
+
+    def test_held_out_rows_are_scored_in_one_pass(self) -> None:
+        rows = _xor_rows()
+        tree = _fit_xor(max_depth=2)
+        baseline = fit(
+            rows,
+            max_depth=0,
+            min_samples_leaf=1,
+            feature_names=("a", "b"),
+            feature_kinds=(FeatureKind.DISCRETE, FeatureKind.DISCRETE),
+        )
+        wrapped = _OnePass(rows)
+        wrong, total, _baseline_wrong, counts = _held_out_pass(tree, baseline, wrapped)
+        self.assertEqual(wrapped.passes, 1)
+        self.assertEqual((wrong, total), (0, 4))
+        self.assertEqual(counts["mines"] + counts["safe"], 4)
+        source = inspect.getsource(run_training)
+        self.assertEqual(source.count("_held_out_pass("), 1)
+        self.assertNotIn("test_error(", source)
+        self.assertNotIn("predict_class", source)
+        self.assertNotIn(".predict(", source)
 
 
 class SplitTests(unittest.TestCase):
@@ -537,6 +634,27 @@ class ScoringTests(unittest.TestCase):
             reasoning.status,
             (DecisionStatus.PROVED_SAFE, DecisionStatus.PROVED_MINE),
         )
+
+
+def _node_count(node: Leaf | DiscreteNode | ThresholdNode) -> int:
+    if isinstance(node, Leaf):
+        return node.total
+    return node.safe + node.mine
+
+
+class _OnePass:
+    """Counts how many times a scoring loop iterates the rows."""
+
+    def __init__(self, rows: list[Example]) -> None:
+        self.rows = rows
+        self.passes = 0
+
+    def __len__(self) -> int:
+        return len(self.rows)
+
+    def __iter__(self):
+        self.passes += 1
+        return iter(self.rows)
 
 
 def _constant_tree() -> DecisionTree:

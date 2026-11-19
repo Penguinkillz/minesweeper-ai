@@ -122,6 +122,48 @@ def select_hyperparameters(
     return best_tree, best_key[1], best_key[2], grid
 
 
+def _held_out_pass(
+    tree: DecisionTree,
+    baseline: DecisionTree,
+    examples: Sequence[Example],
+) -> tuple[int, int, int, dict[str, int]]:
+    """Score the test rows once.
+
+    The selected tree's majority-class error, its two class-wise counts, and
+    the empty-tree error are collected in this walk. Nothing else reads the
+    test rows.
+    """
+    if not examples:
+        raise ValueError("error is undefined on an empty example list")
+    wrong = 0
+    baseline_wrong = 0
+    mines = 0
+    mines_predicted_safe = 0
+    safe = 0
+    safe_predicted_mine = 0
+    for example in examples:
+        predicted = tree.predict_class(example.features)
+        if predicted != example.label:
+            wrong += 1
+        if baseline.predict_class(example.features) != example.label:
+            baseline_wrong += 1
+        if example.label == 1:
+            mines += 1
+            if predicted == 0:
+                mines_predicted_safe += 1
+        else:
+            safe += 1
+            if predicted == 1:
+                safe_predicted_mine += 1
+    counts = {
+        "mines": mines,
+        "mines_predicted_safe": mines_predicted_safe,
+        "safe": safe,
+        "safe_predicted_mine": safe_predicted_mine,
+    }
+    return wrong, len(examples), baseline_wrong, counts
+
+
 def _fraction(wrong: int, total: int) -> str:
     return f"{wrong}/{total} = {wrong / total:.10f}"
 
@@ -161,20 +203,25 @@ def run_training(
 
     train_wrong, train_total = error_counts(tree, train_examples)
     validation_wrong, validation_total = error_counts(tree, validation_examples)
-    test_wrong, test_total = error_counts(tree, test_examples)
-    # test_error is the only test-set call, and it does not receive training rows.
-    held_out = test_error(tree, test_examples)
-    if held_out != test_wrong / test_total:
-        raise RuntimeError("test_error disagreed with the test-set count")
-
+    # One walk of the test rows. Reload is checked from the printed tree, not
+    # by predicting those rows again.
+    test_wrong, test_total, baseline_test_wrong, test_class_counts = _held_out_pass(
+        tree,
+        baseline,
+        test_examples,
+    )
+    rendered = tree.render()
     tree.save(MODEL_PATH)
     loaded = DecisionTree.load(MODEL_PATH)
-    for example in test_examples:
-        if loaded.predict_class(example.features) != tree.predict_class(example.features):
-            raise RuntimeError("the reloaded tree disagreed with the fitted tree")
-        if loaded.predict(example.features).mine_frequency != tree.predict(example.features).mine_frequency:
-            raise RuntimeError("the reloaded leaf frequency disagreed with the fitted tree")
-    TREE_TEXT_PATH.write_text(tree.render(), encoding="utf-8")
+    if loaded.render() != rendered:
+        raise RuntimeError("the reloaded tree text disagreed with the fitted tree")
+    if (loaded.max_depth, loaded.min_samples_leaf, loaded.stop_on_zero_gain) != (
+        tree.max_depth,
+        tree.min_samples_leaf,
+        tree.stop_on_zero_gain,
+    ):
+        raise RuntimeError("the reloaded tree metadata disagreed with the fitted tree")
+    TREE_TEXT_PATH.write_text(rendered, encoding="utf-8")
     DEPTH1_TEXT_PATH.write_text(shallow.render(), encoding="utf-8")
 
     assignment = assign_boards(seeds)
@@ -202,7 +249,6 @@ def run_training(
     for name, group in (
         ("train", train_examples),
         ("validation", validation_examples),
-        ("test", test_examples),
     ):
         baseline_wrong, baseline_total = error_counts(baseline, group)
         counts = class_errors(tree, group)
@@ -215,6 +261,15 @@ def run_training(
             f"{name}_safe_predicted_mine="
             f"{_class_fraction(counts['safe_predicted_mine'], counts['safe'])}"
         )
+    lines.append(f"empty_tree_test_error={_fraction(baseline_test_wrong, test_total)}")
+    lines.append(
+        "test_mines_predicted_safe="
+        f"{_class_fraction(test_class_counts['mines_predicted_safe'], test_class_counts['mines'])}"
+    )
+    lines.append(
+        "test_safe_predicted_mine="
+        f"{_class_fraction(test_class_counts['safe_predicted_mine'], test_class_counts['safe'])}"
+    )
     lines.append(f"depth1_min1_train_error={_fraction(shallow_wrong, shallow_total)}")
     lines.append(f"depth8_min1_train_error={_fraction(deep_wrong, deep_total)}")
     lines.append("validation_grid:")
