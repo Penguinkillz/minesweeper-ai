@@ -1,0 +1,4 @@
+agent,games,wins,losses,aborted,win_rate,loss_rate,reveals,mine_hits,mine_hit_rate,uncertain_post_opening_reveals,uncertain_post_opening_mine_hits,uncertain_post_opening_mine_hit_rate,average_reveals,guaranteed_safe_reveals,uncertain_reveals,mean_game_seconds,mean_decision_seconds,truncated_decisions
+CLP,50,31,19,0,31/50,19/50,2970,19,19/2970,53,19,19/53,2970/50,2867,103,0.357417,0.005989,0
+MCMC,50,5,45,0,5/50,45/50,1684,45,45/1684,1513,45,45/1513,1684/50,121,1563,36.396181,1.080598,0
+decision_tree,50,0,50,0,0/50,50/50,327,50,50/327,277,50,50/277,327/50,0,327,0.006037,0.000886,0

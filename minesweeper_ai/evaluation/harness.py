@@ -1,21 +1,29 @@
-"""Phase 1 harness: the same beginner seeds, one fresh board per agent.
+"""Evaluation harness for Phase 1 and Phase 2.
 
-The three agents do not share a board and do not alternate moves. The log
-written here is the only input to the summary and the charts. Seeds are the
-integers 100 through 149, in that order. Stage 4 used 0 through 99, so this
-list does not repeat a training, validation, or test board. It is not
-revised after a run to change a ranking.
+Both phases give each agent a fresh board. The agents do not share a board
+and they do not alternate moves. The log written for a phase is the only
+input to that phase's summary, table, charts, and, for Phase 2, the write-up.
 
-Beginner rules only: 9×9 and 10 mines. An intermediate board is refused.
-The agents are the Stage 2, 3, and 4 defaults. CLP and MCMC are constructed
-with no node cap. The decision tree is the saved Stage 4 model, loaded and
-not retrained. The MCMC sampler seed is 0 on every game, which is the seed
-the Stage 3 traces use. It is not chosen to raise a win rate.
+Phase 1 plays the integers 100 through 149 on beginner boards, 9×9 with 10
+mines. ``require_beginner`` still refuses a 16×16 board, and the Phase 1
+command still writes ``phase1_log.jsonl``. Stage 4 used seeds 0 through 99,
+so this list does not repeat a training, validation, or test board.
+
+Phase 2 plays the integers 200 through 249 on intermediate boards, 16×16
+with 40 mines. Those seeds are disjoint from Stage 4 and from Phase 1.
+``require_intermediate`` refuses any other size. The Phase 2 files live
+under ``results/phase2/`` and do not replace the Phase 1 log.
+
+Neither seed list is revised after a run to change a ranking. The agents
+are the Stage 2, 3, and 4 defaults. CLP and MCMC are constructed with no
+node cap. The decision tree is the saved Stage 4 model, loaded and not
+retrained. The MCMC sampler seed is 0 on every game, which is the seed the
+Stage 3 traces use. It is not chosen to raise a win rate.
 
 A decision that raises because the clues have no legal layout, or because a
 capped search accepts nothing, ends the game as aborted. No click is invented.
 The decision cap is one action per cell. A game that is still going after
-that many actions is aborted, so a toggle loop cannot run forever.
+that many actions is aborted, and the game line records why.
 """
 
 from __future__ import annotations
@@ -43,6 +51,7 @@ from minesweeper_ai.evaluation.metrics import (
     DECISION_TREE_METRICS_FILE,
     attach_decision_tree_metrics,
     format_markdown,
+    read_log,
     summarize_log,
     summary_csv,
     write_log,
@@ -54,11 +63,27 @@ from minesweeper_ai.evaluation.metrics import (
 # split. They are not added or removed because of how an agent finished.
 PHASE1_SEEDS: tuple[int, ...] = tuple(range(100, 150))
 
+# The fifty integers after Phase 1. They stay disjoint from Stage 4 (0–99)
+# and from Phase 1 (100–149). They are not shortened to change a ranking.
+PHASE2_SEEDS: tuple[int, ...] = tuple(range(200, 250))
+
+INTERMEDIATE_ROWS = 16
+INTERMEDIATE_COLS = 16
+INTERMEDIATE_MINES = 40
+
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 LOG_PATH = RESULTS_DIR / "phase1_log.jsonl"
 SUMMARY_PATH = RESULTS_DIR / "phase1_summary.json"
 CSV_PATH = RESULTS_DIR / "phase1_summary.csv"
 TABLE_PATH = RESULTS_DIR / "phase1_table.md"
+
+PHASE2_DIR = RESULTS_DIR / "phase2"
+PHASE2_LOG_PATH = PHASE2_DIR / "phase2_log.jsonl"
+PHASE2_SUMMARY_PATH = PHASE2_DIR / "phase2_summary.json"
+PHASE2_CSV_PATH = PHASE2_DIR / "phase2_summary.csv"
+PHASE2_TABLE_PATH = PHASE2_DIR / "phase2_table.md"
+PHASE2_LOG_RELATIVE = "minesweeper_ai/evaluation/results/phase2/phase2_log.jsonl"
+PHASE2_DOC_PATH = Path(__file__).resolve().parents[2] / "docs" / "phase-2.md"
 
 AgentFactory = Callable[[Game], object]
 GameFactory = Callable[[int], Game]
@@ -86,7 +111,7 @@ def phase1_agent_factories() -> tuple[tuple[str, AgentFactory], ...]:
 
 
 def require_beginner(game: Game) -> None:
-    """Refuse a board that is not the Phase 1 size. Phase 2 is not this run."""
+    """Refuse a board that is not the Phase 1 size."""
     board = game.board
     if (board.rows, board.cols, board.mine_count) != (BEGINNER_ROWS, BEGINNER_COLS, BEGINNER_MINES):
         raise ValueError(
@@ -96,11 +121,32 @@ def require_beginner(game: Game) -> None:
         )
 
 
+def intermediate_game(seed: int) -> Game:
+    """One new intermediate board. The mine map is placed on the first reveal."""
+    game = Game(rows=INTERMEDIATE_ROWS, cols=INTERMEDIATE_COLS, mine_count=INTERMEDIATE_MINES, seed=seed)
+    require_intermediate(game)
+    return game
+
+
+def require_intermediate(game: Game) -> None:
+    """Refuse a board that is not the Phase 2 size."""
+    board = game.board
+    if (board.rows, board.cols, board.mine_count) != (INTERMEDIATE_ROWS, INTERMEDIATE_COLS, INTERMEDIATE_MINES):
+        raise ValueError(
+            "Phase 2 plays intermediate boards only: "
+            f"{INTERMEDIATE_ROWS}x{INTERMEDIATE_COLS}, {INTERMEDIATE_MINES} mines. "
+            f"Refusing {board.rows}x{board.cols}, {board.mine_count} mines."
+        )
+
+
 def run_comparison(
     seeds: Sequence[int],
     agent_factories: Sequence[tuple[str, AgentFactory]],
     game_factory: GameFactory = beginner_game,
     verbose: bool = False,
+    *,
+    phase: int = 1,
+    board_check: Callable[[Game], None] = require_beginner,
 ) -> list[dict[str, object]]:
     """Play every agent on its own board for every seed.
 
@@ -108,43 +154,77 @@ def run_comparison(
     be distinct, before any agent is asked for a move. One agent's game is
     then played to the end before the next agent starts. Moves are not
     interleaved.
+
+    ``board_check`` is ``require_beginner`` unless the caller is Phase 2.
+    The size written on the run line is the size of the boards that check
+    accepted. It is not a second size stored beside the games.
     """
     names = [name for name, _factory in agent_factories]
-    records: list[dict[str, object]] = [
-        {
-            "record_type": "run",
-            "phase": 1,
-            "rows": BEGINNER_ROWS,
-            "cols": BEGINNER_COLS,
-            "mine_count": BEGINNER_MINES,
-            "seeds": [int(seed) for seed in seeds],
-            "agents": names,
-            "decision_cap": BEGINNER_ROWS * BEGINNER_COLS,
-            "decision_tree_metrics_file": DECISION_TREE_METRICS_FILE,
-        }
-    ]
+    records: list[dict[str, object]] = []
+    logged_size: tuple[int, int, int] | None = None
     for seed in seeds:
         if verbose:
             print(f"seed {seed}", flush=True)
         games = [game_factory(int(seed)) for _name in names]
+        if not games:
+            raise ValueError("the harness needs at least one agent")
         for game in games:
-            require_beginner(game)
+            board_check(game)
         boards = [game.board for game in games]
         if len({id(board) for board in boards}) != len(boards):
             raise RuntimeError("the harness gave two agents the same board object")
         if len({id(board.states) for board in boards}) != len(boards):
             raise RuntimeError("the harness gave two agents the same cell grid")
+        if logged_size is None:
+            first = games[0].board
+            logged_size = (first.rows, first.cols, first.mine_count)
+            records.append(
+                {
+                    "record_type": "run",
+                    "phase": phase,
+                    "rows": first.rows,
+                    "cols": first.cols,
+                    "mine_count": first.mine_count,
+                    "seeds": [int(item) for item in seeds],
+                    "agents": names,
+                    "decision_cap": first.rows * first.cols,
+                    "decision_tree_metrics_file": DECISION_TREE_METRICS_FILE,
+                }
+            )
+        for game in games:
+            size = (game.board.rows, game.board.cols, game.board.mine_count)
+            if size != logged_size:
+                raise ValueError(
+                    "the harness was given boards of different sizes: "
+                    f"{logged_size[0]}x{logged_size[1]}, {logged_size[2]} mines and "
+                    f"{size[0]}x{size[1]}, {size[2]} mines."
+                )
         for (name, factory), game in zip(agent_factories, games):
             agent = factory(game)
-            decisions, game_record = play_game(agent, game, name, int(seed))
+            decisions, game_record = play_game(agent, game, name, int(seed), board_check=board_check)
             records.extend(decisions)
             records.append(game_record)
+            if verbose:
+                reason = game_record["abort_reason"]
+                suffix = f" abort_reason={reason}" if reason else ""
+                print(
+                    f"seed {seed} {name} {game_record['outcome']} "
+                    f"{float(game_record['game_seconds']):.1f}s decisions={len(decisions)}{suffix}",
+                    flush=True,
+                )
     return records
 
 
-def play_game(agent: object, game: Game, agent_name: str, seed: int) -> tuple[list[dict[str, object]], dict[str, object]]:
+def play_game(
+    agent: object,
+    game: Game,
+    agent_name: str,
+    seed: int,
+    *,
+    board_check: Callable[[Game], None] = require_beginner,
+) -> tuple[list[dict[str, object]], dict[str, object]]:
     """Play one agent on one board. The agent is shown ``visible_state`` only."""
-    require_beginner(game)
+    board_check(game)
     cap = game.board.rows * game.board.cols
     decisions: list[dict[str, object]] = []
     abort_reason: str | None = None
@@ -239,10 +319,11 @@ def write_phase1_artifacts(
 
 
 def refresh_reports(log_path: Path = LOG_PATH) -> dict[str, object]:
-    """Rebuild the summary, the table, and the charts by reading the log.
+    """Rebuild the Phase 1 summary, the table, and the charts by reading the log.
 
     This does not play another game, so the wall-clock figures stay the ones
-    recorded when the log was written.
+    recorded when the log was written. It does not read or write the Phase 2
+    directory.
     """
     summary = summarize_log(log_path)
     attach_decision_tree_metrics(summary)
@@ -253,13 +334,69 @@ def refresh_reports(log_path: Path = LOG_PATH) -> dict[str, object]:
     return summary
 
 
-def main() -> None:
-    """Run the published seed list and print the table read from the log.
+def phase2_summary_from_log(log_path: Path = PHASE2_LOG_PATH) -> dict[str, object]:
+    """Read the Phase 2 log and attach the Stage 4 metric lines.
 
-    ``--from-log`` rebuilds the table from the log already in the repository.
-    It does not play the games again.
+    The game figures come from the log. The metric lines are copied from the
+    Stage 4 file and are not a new fit. ``source_log`` is the repository
+    path of this run, so a different working directory does not change it.
     """
-    if len(sys.argv) > 1 and sys.argv[1] == "--from-log":
+    summary = summarize_log(log_path)
+    summary["source_log"] = PHASE2_LOG_RELATIVE
+    attach_decision_tree_metrics(summary)
+    return summary
+
+
+def write_phase2_artifacts(records: list[dict[str, object]], log_path: Path = PHASE2_LOG_PATH) -> dict[str, object]:
+    """Write the Phase 2 log, then rebuild every report by reading that file."""
+    write_log(log_path, records)
+    return refresh_phase2_reports(log_path)
+
+
+def refresh_phase2_reports(log_path: Path = PHASE2_LOG_PATH) -> dict[str, object]:
+    """Rebuild the Phase 2 summary, table, charts, and write-up from the log.
+
+    This does not play another game and does not write ``phase1_log.jsonl``.
+    The write-up is produced from the records in ``log_path`` and from the
+    summary of that same file.
+    """
+    from minesweeper_ai.evaluation.report import format_phase2_document
+
+    summary = phase2_summary_from_log(log_path)
+    write_summary(PHASE2_SUMMARY_PATH, summary)
+    PHASE2_CSV_PATH.write_text(summary_csv(summary), encoding="utf-8")
+    PHASE2_TABLE_PATH.write_text(format_markdown(summary), encoding="utf-8")
+    write_graphs(PHASE2_DIR, summary)
+    document = format_phase2_document(read_log(log_path), summary)
+    PHASE2_DOC_PATH.write_text(document, encoding="utf-8")
+    return summary
+
+
+def main() -> None:
+    """Run a published seed list and print the table read from its log.
+
+    With no arguments this is Phase 1, which replaces ``phase1_log.jsonl``.
+    ``--from-log`` rebuilds the Phase 1 table from that log and does not play
+    again. ``--phase2`` plays the intermediate seeds into ``results/phase2/``.
+    ``--phase2 --from-log`` rebuilds the Phase 2 reports from the Phase 2 log
+    and does not play again. Phase 2 does not write the Phase 1 log.
+    """
+    args = sys.argv[1:]
+    phase2 = "--phase2" in args
+    from_log = "--from-log" in args
+    if phase2 and from_log:
+        summary = refresh_phase2_reports()
+    elif phase2:
+        records = run_comparison(
+            PHASE2_SEEDS,
+            phase1_agent_factories(),
+            intermediate_game,
+            verbose=True,
+            phase=2,
+            board_check=require_intermediate,
+        )
+        summary = write_phase2_artifacts(records)
+    elif from_log:
         summary = refresh_reports()
     else:
         records = run_comparison(PHASE1_SEEDS, phase1_agent_factories(), beginner_game, verbose=True)
