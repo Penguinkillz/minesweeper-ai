@@ -1,1 +1,1 @@
-"""Minesweeper project. Stage 5 compares the three beginner agents on one seed list."""
+"""Minesweeper project. Stage 6 opens a window on the three existing agents."""
