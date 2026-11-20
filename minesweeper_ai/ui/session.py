@@ -1,10 +1,11 @@
 """One game the window can start, reset, and step.
 
-Nothing here chooses a cell. An agent step calls ``agent.act`` on the
-visible board and then asks the environment to reveal or flag. That is the
-same ``act`` the Phase 1 harness calls. Manual play calls ``Game.reveal``
-and ``Game.flag`` directly. The first reveal still places the mines and
-excludes the clicked cell.
+An agent step calls ``agent.act`` on the visible board and then asks the
+environment to reveal or flag. That is the same ``act`` the Phase 1 harness
+calls. Before that first ``act``, the window makes the environment's
+opening reveal: mines are placed then, the clicked cell is excluded, and
+the click is not an agent decision. Manual play calls ``Game.reveal`` and
+``Game.flag`` directly, including its own first click.
 
 This module does not import tkinter. The tests exercise it without a display.
 """
@@ -17,11 +18,13 @@ from dataclasses import dataclass
 from minesweeper_ai.agents.base import Action, ActionKind, Reasoning
 from minesweeper_ai.agents.clp import CLPAgent, UnsatisfiablePosition
 from minesweeper_ai.agents.decision_tree import DecisionTreeAgent
+from minesweeper_ai.agents.hybrid import HybridAgent
 from minesweeper_ai.agents.mcmc import FrontierSearchTruncated, MCMCAgent
 from minesweeper_ai.env.board import (
     BEGINNER_COLS,
     BEGINNER_MINES,
     BEGINNER_ROWS,
+    PUBLISHED_FIRST_CLICK,
     CellState,
 )
 from minesweeper_ai.env.rules import Game, GameStatus
@@ -31,7 +34,8 @@ MANUAL = "manual"
 PLAYER_CLP = "CLP"
 PLAYER_MCMC = "MCMC"
 PLAYER_TREE = "decision_tree"
-PLAYERS: tuple[str, ...] = (MANUAL, PLAYER_CLP, PLAYER_MCMC, PLAYER_TREE)
+PLAYER_HYBRID = "hybrid"
+PLAYERS: tuple[str, ...] = (MANUAL, PLAYER_CLP, PLAYER_MCMC, PLAYER_TREE, PLAYER_HYBRID)
 
 # Architecture section 1. The environment already accepts these arguments.
 # The harness refuses them. The window offers them for play only.
@@ -49,6 +53,7 @@ PLAYER_LABELS: dict[str, str] = {
     PLAYER_CLP: "CLP",
     PLAYER_MCMC: "MCMC",
     PLAYER_TREE: "Decision tree",
+    PLAYER_HYBRID: "Hybrid",
 }
 
 AgentBuilder = Callable[[str], object]
@@ -58,10 +63,12 @@ STEP_FAILURES = (UnsatisfiablePosition, FrontierSearchTruncated, ValueError)
 
 
 def phase1_agent(name: str) -> object:
-    """Build the agent the harness builds for this name.
+    """Build the player the window steps.
 
-    CLP and MCMC have no node cap. MCMC uses sampler seed 0. The decision
-    tree is loaded from the saved Stage 4 file and is not fit again.
+    CLP, MCMC, and the decision tree match the harness factories. CLP and
+    MCMC have no node cap. MCMC uses sampler seed 0. The decision tree is
+    loaded from the saved Stage 4 file and is not fit again. The hybrid is
+    a fourth window player. The harness factories do not include it.
     """
     if name == PLAYER_CLP:
         return CLPAgent()
@@ -69,6 +76,8 @@ def phase1_agent(name: str) -> object:
         return MCMCAgent(sampler_seed=0)
     if name == PLAYER_TREE:
         return DecisionTreeAgent.from_saved()
+    if name == PLAYER_HYBRID:
+        return HybridAgent()
     raise ValueError(f"unknown agent {name}")
 
 
@@ -220,7 +229,7 @@ class PlaySession:
             self.select_player(player)
 
     def select_player(self, name: str) -> None:
-        """Choose manual play or one of the three harness agents.
+        """Choose manual play, one of the three harness agents, or the hybrid.
 
         Selecting the player that is already active keeps the current agent.
         A different player replaces it and leaves the board as it is.
@@ -255,19 +264,25 @@ class PlaySession:
         self.start()
 
     def step(self) -> MoveView:
-        """Ask the selected agent for one move and apply it.
+        """Apply one step. The opening reveal is the environment's.
 
-        The argument to ``act`` is ``Game.visible_state()``. The harness
-        calls that same method. A failure that the harness treats as an
-        abort is stored and no other cell is clicked.
+        While mines are not placed, this reveals ``PUBLISHED_FIRST_CLICK``
+        and does not call ``act``. That click is safe because the
+        environment excludes it from mine placement. It has no agent status.
+        CLP, MCMC, the decision tree, and the hybrid all receive that same
+        opening. Later steps call ``agent.act`` on ``Game.visible_state()``,
+        which is the call the harness makes. A failure that the harness
+        treats as an abort is stored and no other cell is clicked.
         """
         game = self._require_started()
         if self.player == MANUAL or self.agent is None:
-            self.note = "Select CLP, MCMC, or the decision tree before stepping."
+            self.note = "Select CLP, MCMC, the decision tree, or the hybrid before stepping."
             raise RuntimeError(self.note)
         if self.halted or game.status is not GameStatus.ONGOING:
             self.note = "The game is not waiting for a move."
             raise RuntimeError(self.note)
+        if not game.board.mines_placed:
+            return self._environment_opening()
         state = game.visible_state()
         try:
             action, reasoning = self.agent.act(state)  # type: ignore[attr-defined]
@@ -280,6 +295,37 @@ class PlaySession:
             self.note = "The agent did not return an action and a reasoning record."
             raise RuntimeError(self.note)
         return self._apply_agent(action, reasoning)
+
+    def _environment_opening(self) -> MoveView:
+        """Place the mines by revealing the published first cell.
+
+        The agent is not asked. The status stays unset so the opening is
+        not labeled ``estimated``, ``fallback``, or any other agent status.
+        """
+        game = self.game
+        if game is None:
+            raise RuntimeError("Start a game first.")
+        row, column = PUBLISHED_FIRST_CLICK
+        game.reveal(row, column)
+        self.last = MoveView(
+            source="environment",
+            action="reveal",
+            cell=(row, column),
+            status=None,
+            uncertain=None,
+            explanation=(
+                "Opening reveal. The environment placed the mines and excluded this cell. "
+                "No agent was asked, and this click has no agent status."
+            ),
+            agent_name=None,
+            hit_mine=False,
+            applied_cell=(row, column),
+        )
+        if game.status is GameStatus.ONGOING:
+            self.note = "First reveal. The environment placed the mines and excluded this cell."
+        else:
+            self.note = _outcome_note(game, first=True)
+        return self.last
 
     def reveal(self, row: int, column: int) -> None:
         """Manual reveal. The environment handles the first click and flood-fill."""
@@ -436,8 +482,9 @@ class PlaySession:
 def window_commands(session: PlaySession) -> dict[str, Callable[..., object]]:
     """The callables the window binds to Start, Reset, and Step.
 
-    Step is ``PlaySession.step``. That method calls ``agent.act`` on the
-    visible state, which is the call the harness makes inside ``play_game``.
+    Step is ``PlaySession.step``. The first step is the environment's safe
+    opening reveal. Later steps call ``agent.act`` on the visible state,
+    which is the call the harness makes inside ``play_game``.
     """
     return {
         "start": session.start,
@@ -480,7 +527,10 @@ def describe_decision(snapshot: BoardSnapshot) -> str:
             lines.append(f"Applied cell: ({last.applied_cell[0]}, {last.applied_cell[1]})")
         if last.status is None:
             lines.append("Status: none")
-            lines.append("This click was manual, so there is no agent status.")
+            if last.source == "environment":
+                lines.append("This click was the environment's opening reveal, so there is no agent status.")
+            else:
+                lines.append("This click was manual, so there is no agent status.")
         else:
             lines.append(f"Status: {last.status}")
             lines.append(f"Uncertain: {'yes' if last.uncertain else 'no'}")
