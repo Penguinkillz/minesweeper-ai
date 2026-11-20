@@ -193,8 +193,6 @@ class SessionTests(unittest.TestCase):
             def act(self, state: VisibleState) -> tuple[Action, Reasoning]:
                 self.calls += 1
                 self.assert_visible(state)
-                if self.calls == 1:
-                    return Action.reveal(0, 0), _reasoning(0, 0, DecisionStatus.FALLBACK, "opening")
                 mine = sorted(holder["session"].game.board.mines)[0]  # type: ignore[union-attr]
                 return Action.reveal(*mine), _reasoning(*mine, DecisionStatus.FALLBACK, "guess")
 
@@ -211,9 +209,14 @@ class SessionTests(unittest.TestCase):
         holder["test"] = self
         session.configure(player="CLP", seed=6)
         session.start()
-        session.step()
+        opening = session.step()
+        self.assertEqual(spy.calls, 0)
+        self.assertIsNone(opening.status)
+        self.assertIsNone(opening.agent_name)
+        self.assertEqual(opening.cell, (0, 0))
         self.assertNotIn((0, 0), session.game.board.mines)  # type: ignore[union-attr]
         session.step()
+        self.assertEqual(spy.calls, 1)
         self.assertIs(session.game.status, GameStatus.LOST)  # type: ignore[union-attr]
         snapshot = session.snapshot()
         losing = [cell for cell in snapshot.cells if cell.is_losing_mine]
@@ -231,7 +234,7 @@ class SessionTests(unittest.TestCase):
         self.assertIn("guess", describe_decision(snapshot))
         with self.assertRaises(RuntimeError):
             session.step()
-        self.assertEqual(spy.calls, 2)
+        self.assertEqual(spy.calls, 1)
 
     def test_step_calls_act_on_the_visible_state_and_applies_a_flag(self) -> None:
         explanation = "A singleton domain is a finished proof."
@@ -246,6 +249,11 @@ class SessionTests(unittest.TestCase):
         session = PlaySession(agent_builder=lambda _name: spy)
         session.configure(player="CLP", seed=1)
         session.start()
+        opening = run_step(window_commands(session))
+        self.assertEqual(spy.seen, [])
+        self.assertIsNone(opening.status)  # type: ignore[attr-defined]
+        self.assertIsNone(opening.agent_name)  # type: ignore[attr-defined]
+        self.assertEqual(opening.cell, (0, 0))  # type: ignore[attr-defined]
         before = session.game.visible_state()  # type: ignore[union-attr]
         record = run_step(window_commands(session))
         self.assertEqual(len(spy.seen), 1)
@@ -276,11 +284,16 @@ class SessionTests(unittest.TestCase):
         session = PlaySession(agent_builder=lambda _name: boom)
         session.configure(player="MCMC", seed=1)
         session.start()
+        opening = run_step(window_commands(session))
+        self.assertEqual(boom.calls, 0)
+        self.assertIsNone(opening.status)  # type: ignore[attr-defined]
+        self.assertFalse(session.halted)
+        self.assertTrue(session.game.board.mines_placed)  # type: ignore[union-attr]
+        states_after_opening = [row[:] for row in session.game.board.states]  # type: ignore[union-attr]
         with self.assertRaises(UnsatisfiablePosition):
             run_step(window_commands(session))
         self.assertTrue(session.halted)
-        self.assertTrue(all(cell.state == "hidden" for cell in session.snapshot().cells))
-        self.assertFalse(session.game.board.mines_placed)  # type: ignore[union-attr]
+        self.assertEqual(session.game.board.states, states_after_opening)  # type: ignore[union-attr]
         with self.assertRaises(RuntimeError):
             session.step()
         self.assertEqual(boom.calls, 1)
@@ -333,7 +346,17 @@ class SessionTests(unittest.TestCase):
             session = PlaySession()
             session.configure(player=name, seed=11, difficulty="beginner")
             session.start()
+            opening = session.step()
+            self.assertIsNone(opening.status)
+            self.assertIsNone(opening.agent_name)
+            self.assertEqual(opening.cell, (0, 0))
+            self.assertEqual(opening.source, "environment")
             twin = Game(seed=11)
+            twin.reveal(0, 0)
+            game = session.game
+            assert game is not None
+            self.assertEqual(game.board.mines, twin.board.mines)
+            self.assertEqual(game.board.states, twin.board.states)
             agent = phase1_agent(name)
             action, reasoning = agent.act(twin.visible_state())
             if action.kind.value == "reveal":

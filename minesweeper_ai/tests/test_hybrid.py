@@ -12,14 +12,14 @@ from minesweeper_ai.agents.base import Action, ActionKind, DecisionStatus, Reaso
 from minesweeper_ai.agents.clp import CLPAgent
 from minesweeper_ai.agents.hybrid import AGENT_NAME, HybridAgent
 from minesweeper_ai.agents.mcmc import REGIME_EXACT, REGIME_LOCAL, MCMCAgent
-from minesweeper_ai.env.board import CellState
+from minesweeper_ai.env.board import PUBLISHED_FIRST_CLICK, CellState
 from minesweeper_ai.env.view import VisibleCell, VisibleState
 from minesweeper_ai.evaluation.harness import (
     LOG_PATH,
     PHASE2_LOG_PATH,
     phase1_agent_factories,
 )
-from minesweeper_ai.ui.session import PLAYERS, PlaySession, phase1_agent
+from minesweeper_ai.ui.session import PLAYERS, PlaySession, describe_decision, phase1_agent
 
 Cell = tuple[int, int]
 
@@ -253,21 +253,70 @@ class WindowTests(unittest.TestCase):
         self.assertIsNone(agent.mcmc_agent.node_limit)  # type: ignore[attr-defined]
         self.assertTrue(agent.mcmc_agent.exact_marginals)  # type: ignore[attr-defined]
 
-    def test_one_smoke_step_selects_hybrid_and_leaves_the_logs_alone(self) -> None:
+    def test_opening_click_is_the_environment_before_hybrid_act(self) -> None:
         phase1 = LOG_PATH.read_bytes()
         phase2 = PHASE2_LOG_PATH.read_bytes()
-        session = PlaySession()
-        session.configure(player="hybrid", seed=0, difficulty="beginner")
-        session.start()
-        self.assertIsInstance(session.agent, HybridAgent)
-        record = session.step()
-        self.assertEqual(record.agent_name, AGENT_NAME)
-        self.assertEqual(record.cell, (0, 0))
-        self.assertEqual(record.status, "estimated")
-        self.assertEqual(record.action, "reveal")
-        self.assertIn("exact marginal enumeration", record.explanation)
-        game = session.game
+        asked: list[VisibleState] = []
+        real = PlaySession()
+        real.configure(player="hybrid", seed=0, difficulty="beginner")
+        real.start()
+        self.assertIsInstance(real.agent, HybridAgent)
+        original = real.agent.act  # type: ignore[union-attr]
+
+        def _watch(state: VisibleState) -> tuple[Action, Reasoning]:
+            asked.append(state)
+            return original(state)
+
+        real.agent.act = _watch  # type: ignore[union-attr]
+        opening = real.step()
+        self.assertEqual(asked, [])
+        self.assertEqual(opening.source, "environment")
+        self.assertIsNone(opening.status)
+        self.assertIsNone(opening.uncertain)
+        self.assertIsNone(opening.agent_name)
+        self.assertEqual(opening.cell, PUBLISHED_FIRST_CLICK)
+        self.assertEqual(opening.action, "reveal")
+        self.assertNotIn("estimated", opening.explanation)
+        panel = describe_decision(real.snapshot())
+        self.assertIn("Status: none", panel)
+        self.assertNotIn("Status: estimated", panel)
+        self.assertNotIn("Agent: hybrid", panel)
+        game = real.game
         assert game is not None
-        self.assertNotIn((0, 0), game.board.mines)
+        self.assertTrue(game.board.mines_placed)
+        self.assertNotIn(PUBLISHED_FIRST_CLICK, game.board.mines)
+        self.assertIs(game.board.states[0][0], CellState.REVEALED)
+
+        for name in ("CLP", "MCMC", "decision_tree", "hybrid"):
+            seen: list[VisibleState] = []
+
+            def builder(player: str, seen: list[VisibleState] = seen) -> object:
+                class _Agent:
+                    def act(self, state: VisibleState) -> tuple[Action, Reasoning]:
+                        seen.append(state)
+                        return Action.reveal(1, 1), Reasoning(
+                            agent_name=AGENT_NAME,
+                            cell=(1, 1),
+                            status=DecisionStatus.FALLBACK,
+                            explanation="The opening is already done.",
+                            uncertain=True,
+                        )
+
+                return _Agent()
+
+            session = PlaySession(agent_builder=builder)
+            session.configure(player=name, seed=0, difficulty="beginner")
+            session.start()
+            first = session.step()
+            self.assertEqual(seen, [], msg=name)
+            self.assertEqual(first.source, "environment")
+            self.assertIsNone(first.status)
+            self.assertIsNone(first.agent_name)
+            self.assertEqual(first.cell, (0, 0))
+            second = session.step()
+            self.assertEqual(len(seen), 1, msg=name)
+            self.assertIs(seen[0].cells[0][0].state, CellState.REVEALED)
+            self.assertEqual(second.cell, (1, 1))
+            self.assertEqual(second.status, "fallback")
         self.assertEqual(LOG_PATH.read_bytes(), phase1)
         self.assertEqual(PHASE2_LOG_PATH.read_bytes(), phase2)

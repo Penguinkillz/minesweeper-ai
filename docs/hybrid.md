@@ -43,7 +43,9 @@ From the repository root:
 python3 -m minesweeper_ai.ui.app
 ```
 
-The player row is Manual, CLP, MCMC, Decision tree, Hybrid. Hybrid is `HybridAgent()`: uncapped CLP, and MCMC with sampler seed 0, exact marginals on, and the Stage 0 sweep counts. Step calls `HybridAgent.act` on `Game.visible_state()`, the same call the other agents receive.
+The player row is Manual, CLP, MCMC, Decision tree, Hybrid. Hybrid is `HybridAgent()`: uncapped CLP, and MCMC with sampler seed 0, exact marginals on, and the Stage 0 sweep counts.
+
+The first Step is the environment's opening reveal, the same for Hybrid as for CLP, MCMC, and the decision tree. It reveals `(0, 0)`, places the mines, and excludes that cell. No agent is asked. The click has no agent status, so it is not `estimated`. The next Step calls `HybridAgent.act` on the visible board that opening left behind. That is the same `act` the other agents receive after the same opening. The harness is unchanged: its logs still record each agent's own first decision.
 
 The Comparison tab is still the Phase 1 log of CLP, MCMC, and the decision tree. It is not a hybrid score. The 50-seed benchmarks were not run again.
 
@@ -53,4 +55,4 @@ The Comparison tab is still the Phase 1 log of CLP, MCMC, and the decision tree.
 python3 -m unittest discover -s minesweeper_ai/tests -v
 ```
 
-The hybrid tests cover three rules. A CLP proof is played unchanged, and MCMC is not called. An exact marginal of 0 is `proved_safe` when the guess uses Regime A. A local frequency of 0 is `estimated`, not a proof, when the guess uses Regime B. A further check steps one beginner game with Hybrid selected and checks that the Phase 1 and Phase 2 logs are byte-for-byte the same.
+The hybrid tests cover three rules. A CLP proof is played unchanged, and MCMC is not called. An exact marginal of 0 is `proved_safe` when the guess uses Regime A. A local frequency of 0 is `estimated`, not a proof, when the guess uses Regime B. A window check confirms the opening Step is the environment's reveal at `(0, 0)` with no agent status, that `Hybrid.act` is not called for it, and that the Phase 1 and Phase 2 logs stay byte-for-byte the same.
