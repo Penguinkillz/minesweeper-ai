@@ -1,5 +1,6 @@
-"""The Phase 1 harness gives each agent a board and reads its numbers from the log."""
+"""The harness gives each agent a board and reads its numbers from the log."""
 
+import hashlib
 import json
 import unittest
 from pathlib import Path
@@ -19,19 +20,29 @@ from minesweeper_ai.evaluation.graphs import (
 )
 from minesweeper_ai.evaluation.harness import (
     PHASE1_SEEDS,
+    PHASE2_DOC_PATH,
+    PHASE2_LOG_PATH,
+    PHASE2_SEEDS,
     beginner_game,
+    intermediate_game,
     mine_checksum,
     phase1_agent_factories,
+    phase2_summary_from_log,
     play_game,
+    refresh_phase2_reports,
     require_beginner,
+    require_intermediate,
     run_comparison,
 )
+from minesweeper_ai.evaluation.report import format_phase2_document
 from minesweeper_ai.evaluation.metrics import (
     DECISION_TREE_METRICS,
+    format_markdown,
     is_guaranteed_safe,
     read_log,
     summarize,
     summarize_log,
+    summary_csv,
     write_log,
 )
 from minesweeper_ai.training.dataset import BEGINNER_SEEDS, assign_boards
@@ -566,6 +577,161 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(metrics["train_error"], _metric_line("train_error"))
         self.assertEqual(metrics["validation_error"], _metric_line("validation_error"))
         self.assertEqual(metrics["test_error"], _metric_line("test_error"))
+
+    def test_phase2_seeds_are_disjoint_from_stage4_and_phase1(self) -> None:
+        self.assertEqual(PHASE2_SEEDS, tuple(range(200, 250)))
+        self.assertEqual(len(PHASE2_SEEDS), 50)
+        phase2 = set(PHASE2_SEEDS)
+        self.assertEqual(set(BEGINNER_SEEDS), set(range(100)))
+        self.assertEqual(set(PHASE1_SEEDS), set(range(100, 150)))
+        self.assertTrue(phase2.isdisjoint(BEGINNER_SEEDS))
+        self.assertTrue(phase2.isdisjoint(PHASE1_SEEDS))
+        self.assertTrue(phase2.isdisjoint(range(150)))
+
+    def test_phase2_board_is_intermediate_and_phase1_still_refuses_it(self) -> None:
+        game = intermediate_game(200)
+        self.assertEqual((game.board.rows, game.board.cols, game.board.mine_count), (16, 16, 40))
+        require_intermediate(game)
+        with self.assertRaises(ValueError):
+            require_beginner(game)
+        with self.assertRaises(ValueError):
+            require_intermediate(beginner_game(200))
+        with self.assertRaises(ValueError):
+            run_comparison(
+                (200,),
+                (("stub", lambda _game: RevealAny()),),
+                beginner_game,
+                phase=2,
+                board_check=require_intermediate,
+            )
+
+    def test_phase2_gives_each_agent_a_fresh_intermediate_board(self) -> None:
+        created: list[Game] = []
+
+        def factory(seed: int) -> Game:
+            game = intermediate_game(seed)
+            created.append(game)
+            return game
+
+        records = run_comparison(
+            (200,),
+            (("a", lambda _game: RevealAny()), ("b", lambda _game: RevealAny())),
+            factory,
+            phase=2,
+            board_check=require_intermediate,
+        )
+        self.assertEqual(len(created), 2)
+        self.assertEqual(len({id(game.board) for game in created}), 2)
+        run = records[0]
+        self.assertEqual(run["phase"], 2)
+        self.assertEqual((run["rows"], run["cols"], run["mine_count"]), (16, 16, 40))
+        self.assertEqual(run["seeds"], [200])
+        self.assertEqual(run["decision_cap"], 256)
+        games = [record for record in records if record["record_type"] == "game"]
+        self.assertEqual({record["agent"] for record in games}, {"a", "b"})
+        self.assertEqual({record["seed"] for record in games}, {200})
+        self.assertEqual(len({record["mine_checksum"] for record in games}), 1)
+        openings = [
+            record
+            for record in records
+            if record["record_type"] == "decision" and record["decision_index"] == 0
+        ]
+        self.assertEqual(len(openings), 2)
+        for record in openings:
+            self.assertEqual((record["action"], record["row"], record["column"]), ("reveal", 0, 0))
+            self.assertIs(record["hit_mine"], False)
+
+    def test_phase2_document_quotes_an_abort_reason_from_the_log(self) -> None:
+        reason = "decision cap 256 reached with the game still going"
+        records = [
+            {
+                "record_type": "run",
+                "phase": 2,
+                "rows": 16,
+                "cols": 16,
+                "mine_count": 40,
+                "seeds": [200],
+                "agents": ["CLP"],
+                "decision_cap": 256,
+            },
+            {
+                "record_type": "game",
+                "seed": 200,
+                "agent": "CLP",
+                "outcome": "aborted",
+                "game_seconds": 1.25,
+                "mine_checksum": None,
+                "abort_reason": reason,
+                "rows": 16,
+                "cols": 16,
+                "mine_count": 40,
+            },
+            _decision(agent="CLP", decision_index=0, status="fallback", uncertain=True),
+        ]
+        summary = summarize(records)
+        summary["source_log"] = "minesweeper_ai/evaluation/results/phase2/phase2_log.jsonl"
+        text = format_phase2_document(records, summary)
+        self.assertIn(reason, text)
+        self.assertIn("16×16", text)
+        self.assertIn("phase 2", text)
+        self.assertIn("The log has no MCMC decision with a regime.", text)
+        self.assertNotIn("39/50", text)
+
+    def test_saved_tree_and_phase1_log_bytes(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        expected = {
+            "minesweeper_ai/training/decision_tree.pkl": (
+                "52d4d30c3eafc0e7f0e40e1168012d40ca65897f20bcaa669b317a095445dab5"
+            ),
+            "minesweeper_ai/training/decision_tree.txt": (
+                "ba3275e5669504d6a5910eaedd68cbe55dd0a7a256e745c81772086f538531fe"
+            ),
+            "minesweeper_ai/training/decision_tree_depth1.txt": (
+                "69ee9c1492445d73e3b528ebb1743e881269d36a983cc7b2545ab5001d61b4bc"
+            ),
+            "minesweeper_ai/training/metrics.txt": (
+                "6c5ebacbc97a2b48d9706565fcb1b7f82c3049b1f2aff1f40cce86517f62933c"
+            ),
+            "minesweeper_ai/evaluation/results/phase1_log.jsonl": (
+                "dc28160a428869b2798f65b7dcaba4c288f7a99df7331538c65a5ec5bd40d285"
+            ),
+        }
+        for relative, digest in expected.items():
+            data = (root / relative).read_bytes()
+            self.assertEqual(hashlib.sha256(data).hexdigest(), digest, relative)
+
+    def test_phase2_shipped_reports_match_the_log(self) -> None:
+        self.assertTrue(PHASE2_LOG_PATH.is_file(), "phase 2 must write phase2_log.jsonl before this assertion")
+        phase1 = PHASE2_LOG_PATH.parents[1] / "phase1_log.jsonl"
+        phase1_bytes = phase1.read_bytes()
+        tree = Path(__file__).resolve().parents[2] / "minesweeper_ai" / "training" / "decision_tree.pkl"
+        tree_bytes = tree.read_bytes()
+        summary = phase2_summary_from_log(PHASE2_LOG_PATH)
+        shipped = json.loads(PHASE2_LOG_PATH.with_name("phase2_summary.json").read_text(encoding="utf-8"))
+        self.assertEqual(shipped, summary)
+        self.assertEqual(shipped["seeds"], list(PHASE2_SEEDS))
+        self.assertEqual(shipped["source_log"], "minesweeper_ai/evaluation/results/phase2/phase2_log.jsonl")
+        records = read_log(PHASE2_LOG_PATH)
+        run = records[0]
+        self.assertEqual(run["phase"], 2)
+        self.assertEqual((run["rows"], run["cols"], run["mine_count"]), (16, 16, 40))
+        self.assertEqual(run["seeds"], list(PHASE2_SEEDS))
+        directory = PHASE2_LOG_PATH.parent
+        self.assertEqual((directory / "win_rate.svg").read_text(encoding="utf-8"), win_rate_chart(shipped))
+        self.assertEqual((directory / "guaranteed_safe.svg").read_text(encoding="utf-8"), guaranteed_safe_chart(shipped))
+        self.assertEqual(
+            (directory / "mean_decision_seconds.svg").read_text(encoding="utf-8"),
+            decision_time_chart(shipped),
+        )
+        self.assertEqual((directory / "mcmc_regimes.svg").read_text(encoding="utf-8"), mcmc_regime_chart(shipped))
+        self.assertEqual((directory / "phase2_table.md").read_text(encoding="utf-8"), format_markdown(shipped))
+        self.assertEqual((directory / "phase2_summary.csv").read_text(encoding="utf-8"), summary_csv(shipped))
+        document = format_phase2_document(records, summary)
+        self.assertEqual(PHASE2_DOC_PATH.read_text(encoding="utf-8"), document)
+        refresh_phase2_reports(PHASE2_LOG_PATH)
+        self.assertEqual(phase1.read_bytes(), phase1_bytes)
+        self.assertEqual(tree.read_bytes(), tree_bytes)
+        self.assertEqual(PHASE2_DOC_PATH.read_text(encoding="utf-8"), document)
 
 
 class _StopAfter:

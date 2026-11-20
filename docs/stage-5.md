@@ -134,7 +134,7 @@ The charts repeat the win rates, the guaranteed-safe counts, the mean decision t
 
 ## What the comparison does not show
 
-It does not show an intermediate board. A 16×16, 40-mine game is refused. Phase 2 has not been run.
+It does not show an intermediate board. The Phase 1 entry still refuses a 16×16 game. Phase 2 is a separate log, written up in `docs/phase-2.md`.
 
 It does not show that one agent is the better algorithm outside these 50 seeds. The list is the unused range after the Stage 4 boards. It was not picked to produce this order, and it is not every beginner layout. The win rates are not a target that the agents were adjusted to hit.
 
