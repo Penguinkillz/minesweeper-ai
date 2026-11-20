@@ -1,1 +1,2 @@
-"""Minesweeper project. Stage 5 compares the three agents on a fixed seed list."""
+"""Minesweeper project. Stage 6 opens a window on the three existing agents. Phase 2 compares them on intermediate boards.
+"""
