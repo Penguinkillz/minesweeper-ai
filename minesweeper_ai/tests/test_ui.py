@@ -72,8 +72,8 @@ class _Spy:
 
 
 class SessionTests(unittest.TestCase):
-    def test_players_are_manual_and_the_three_agents(self) -> None:
-        self.assertEqual(PLAYERS, (MANUAL, "CLP", "MCMC", "decision_tree"))
+    def test_players_are_manual_the_three_agents_and_the_hybrid(self) -> None:
+        self.assertEqual(PLAYERS, (MANUAL, "CLP", "MCMC", "decision_tree", "hybrid"))
 
     def test_unknown_player_and_difficulty_are_rejected(self) -> None:
         session = PlaySession()
@@ -91,7 +91,7 @@ class SessionTests(unittest.TestCase):
         session.start()
         with self.assertRaises(RuntimeError):
             run_step(window_commands(session))
-        self.assertEqual(session.note, "Select CLP, MCMC, or the decision tree before stepping.")
+        self.assertEqual(session.note, "Select CLP, MCMC, the decision tree, or the hybrid before stepping.")
         session.select_player("CLP")
         with self.assertRaises(RuntimeError):
             session.reveal(0, 0)

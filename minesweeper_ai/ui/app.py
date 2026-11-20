@@ -120,6 +120,7 @@ class MinesweeperWindow:
             text=(
                 "Start and Reset apply the difficulty and the seed. "
                 "Step asks the selected agent for one move. "
+                "Hybrid is a fourth player: a CLP proof, otherwise one MCMC regime. "
                 "Manual play: click to reveal, right-click to flag."
             ),
         )

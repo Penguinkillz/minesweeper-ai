@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from minesweeper_ai.agents.base import Action, ActionKind, Reasoning
 from minesweeper_ai.agents.clp import CLPAgent, UnsatisfiablePosition
 from minesweeper_ai.agents.decision_tree import DecisionTreeAgent
+from minesweeper_ai.agents.hybrid import HybridAgent
 from minesweeper_ai.agents.mcmc import FrontierSearchTruncated, MCMCAgent
 from minesweeper_ai.env.board import (
     BEGINNER_COLS,
@@ -31,7 +32,8 @@ MANUAL = "manual"
 PLAYER_CLP = "CLP"
 PLAYER_MCMC = "MCMC"
 PLAYER_TREE = "decision_tree"
-PLAYERS: tuple[str, ...] = (MANUAL, PLAYER_CLP, PLAYER_MCMC, PLAYER_TREE)
+PLAYER_HYBRID = "hybrid"
+PLAYERS: tuple[str, ...] = (MANUAL, PLAYER_CLP, PLAYER_MCMC, PLAYER_TREE, PLAYER_HYBRID)
 
 # Architecture section 1. The environment already accepts these arguments.
 # The harness refuses them. The window offers them for play only.
@@ -49,6 +51,7 @@ PLAYER_LABELS: dict[str, str] = {
     PLAYER_CLP: "CLP",
     PLAYER_MCMC: "MCMC",
     PLAYER_TREE: "Decision tree",
+    PLAYER_HYBRID: "Hybrid",
 }
 
 AgentBuilder = Callable[[str], object]
@@ -58,10 +61,12 @@ STEP_FAILURES = (UnsatisfiablePosition, FrontierSearchTruncated, ValueError)
 
 
 def phase1_agent(name: str) -> object:
-    """Build the agent the harness builds for this name.
+    """Build the player the window steps.
 
-    CLP and MCMC have no node cap. MCMC uses sampler seed 0. The decision
-    tree is loaded from the saved Stage 4 file and is not fit again.
+    CLP, MCMC, and the decision tree match the harness factories. CLP and
+    MCMC have no node cap. MCMC uses sampler seed 0. The decision tree is
+    loaded from the saved Stage 4 file and is not fit again. The hybrid is
+    a fourth window player. The harness factories do not include it.
     """
     if name == PLAYER_CLP:
         return CLPAgent()
@@ -69,6 +74,8 @@ def phase1_agent(name: str) -> object:
         return MCMCAgent(sampler_seed=0)
     if name == PLAYER_TREE:
         return DecisionTreeAgent.from_saved()
+    if name == PLAYER_HYBRID:
+        return HybridAgent()
     raise ValueError(f"unknown agent {name}")
 
 
@@ -220,7 +227,7 @@ class PlaySession:
             self.select_player(player)
 
     def select_player(self, name: str) -> None:
-        """Choose manual play or one of the three harness agents.
+        """Choose manual play, one of the three harness agents, or the hybrid.
 
         Selecting the player that is already active keeps the current agent.
         A different player replaces it and leaves the board as it is.
@@ -263,7 +270,7 @@ class PlaySession:
         """
         game = self._require_started()
         if self.player == MANUAL or self.agent is None:
-            self.note = "Select CLP, MCMC, or the decision tree before stepping."
+            self.note = "Select CLP, MCMC, the decision tree, or the hybrid before stepping."
             raise RuntimeError(self.note)
         if self.halted or game.status is not GameStatus.ONGOING:
             self.note = "The game is not waiting for a move."

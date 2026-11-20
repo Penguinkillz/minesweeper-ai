@@ -1,2 +1,2 @@
-"""Minesweeper project. Stage 6 opens a window on the three existing agents. Phase 2 compares them on intermediate boards.
+"""Minesweeper project. Stage 6 opens a window on the three agents. The hybrid is a fourth window player and does not replace them. Phase 2 compares the three agents on intermediate boards.
 """
