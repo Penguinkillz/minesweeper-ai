@@ -170,19 +170,47 @@ class MCMCAgent:
         self.last_result = result
         return result.action, result.reasoning
 
-    def analyse(self, state: VisibleState) -> MCMCResult:
-        """Choose the regime, then the cell. The two regimes are not averaged."""
-        _domains, frontier, _interior, _constraints, _watches = clp._build_model(state)
-        frontier_size = len(frontier)
-        # Regime A is the finished full-block conditional. A larger frontier,
-        # a truncated search, or an explicit switch falls through to Regime B
-        # without using any partial weights.
-        if self.exact_marginals and frontier_size <= FRONTIER_EXACT_LIMIT:
-            enumerated = clp.query(state, self.node_limit)
-            if enumerated.unsatisfiable:
+    def analyse(self, state: VisibleState, enumeration: QueryResult | None = None) -> MCMCResult:
+        """Choose the regime, then the cell. The two regimes are not averaged.
+
+        ``enumeration`` is a query the caller already ran. When it is omitted,
+        this builds the model and queries as before. A finished query is
+        reused: Regime A reads its solutions, and Regime B takes its first
+        accepted frontier as the legal start. Neither path builds the model
+        again. A truncated query has had its partial solutions dropped, so it
+        holds no start to reuse. The legal-start search then still builds the
+        model under this agent's own cap.
+        """
+        if enumeration is None:
+            _domains, frontier, _interior, _constraints, _watches = clp._build_model(state)
+            frontier_size = len(frontier)
+            # Regime A is the finished full-block conditional. A larger frontier,
+            # a truncated search, or an explicit switch falls through to Regime B
+            # without using any partial weights.
+            if self.exact_marginals and frontier_size <= FRONTIER_EXACT_LIMIT:
+                enumerated = clp.query(state, self.node_limit)
+                if enumerated.unsatisfiable:
+                    _raise_unsatisfiable()
+                if enumerated.finished:
+                    return _regime_a(state, enumerated)
+        else:
+            frontier_size = len(enumeration.frontier)
+            if (
+                self.exact_marginals
+                and frontier_size <= FRONTIER_EXACT_LIMIT
+                and enumeration.finished
+            ):
+                if enumeration.unsatisfiable:
+                    _raise_unsatisfiable()
+                return _regime_a(state, enumeration)
+            if enumeration.solutions:
+                return self._regime_b_from(state, frontier_size, _assignment_from_query(state, enumeration))
+            if enumeration.finished and enumeration.unsatisfiable:
                 _raise_unsatisfiable()
-            if enumerated.finished:
-                return _regime_a(state, enumerated)
+            # ``query`` clears solutions when ``finished`` is false. The first
+            # accepted frontier is not in the result, and rebuilding the
+            # constraints is what the legal-start search needs. This is the
+            # capped search, not a second full enumeration.
         # Separate counter, same cap. This search stops at the first accepted
         # frontier, so it can succeed after the full enumeration was truncated.
         start = _first_legal_assignment(state, self.node_limit)
@@ -192,10 +220,18 @@ class MCMCAgent:
             raise FrontierSearchTruncated(self.node_limit, start.nodes)
         if start.assignment is None:
             _raise_unsatisfiable()
+        return self._regime_b_from(state, frontier_size, start.assignment)
+
+    def _regime_b_from(
+        self,
+        state: VisibleState,
+        frontier_size: int,
+        assignment: dict[Cell, int],
+    ) -> MCMCResult:
         return _regime_b(
             state,
             frontier_size,
-            start.assignment,
+            assignment,
             random.Random(self.sampler_seed),
             self.burn_in_sweeps,
             self.retained_sweeps,
@@ -598,6 +634,42 @@ class _LegalStart:
         self.assignment = assignment
         self.status = status
         self.nodes = nodes
+
+
+def _assignment_from_query(state: VisibleState, enumerated: QueryResult) -> dict[Cell, int]:
+    """Legal start for a query that still holds its accepted frontiers.
+
+    The frontier values are the first solution. The interior witness places
+    that solution's residual on the row-major first unfixed interior cells.
+    That is the placement ``_first_legal_assignment`` stops on, without
+    building the model or walking the frontier again.
+    """
+    solution = enumerated.solutions[0]
+    if len(solution.values) != len(enumerated.frontier):
+        raise RuntimeError("frontier solution does not cover the frontier")
+    domains = dict(enumerated.propagated_domains)
+    assignment: dict[Cell, int] = {}
+    for cell, value in zip(enumerated.frontier, solution.values):
+        if _is_hidden(state, cell):
+            assignment[cell] = value
+    placed = 0
+    for cell in enumerated.interior:
+        if domains.get(cell) != frozenset((0, 1)):
+            continue
+        bit = 1 if placed < solution.residual else 0
+        placed += bit
+        assignment[cell] = bit
+    for cell in enumerated.interior:
+        if cell in assignment or not _is_hidden(state, cell):
+            continue
+        domain = domains.get(cell)
+        if domain == frozenset((1,)):
+            assignment[cell] = 1
+        elif domain == frozenset((0,)):
+            assignment[cell] = 0
+        else:
+            raise RuntimeError(f"interior cell {cell} was left unfixed")
+    return assignment
 
 
 def _first_legal_assignment(state: VisibleState, node_limit: int | None) -> _LegalStart:

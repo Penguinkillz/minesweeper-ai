@@ -416,8 +416,20 @@ class CLPAgent:
     def __init__(self, node_limit: int | None = None) -> None:
         self.node_limit = node_limit
 
+    def analyse(self, state: VisibleState) -> QueryResult:
+        """One query, including every proved safe cell and every proved mine.
+
+        ``act`` decides from this result. A caller that needs the other proved
+        cells, not only the one returned action, uses this instead of ``act``.
+        """
+        return query(state, self.node_limit)
+
     def act(self, state: VisibleState) -> tuple[Action, Reasoning]:
-        result = query(state, self.node_limit)
+        """Play one move. The decision order above is unchanged."""
+        return self.decide(state, self.analyse(state))
+
+    def decide(self, state: VisibleState, result: QueryResult) -> tuple[Action, Reasoning]:
+        """Choose the move from a query that has already been run."""
         if result.unsatisfiable:
             raise UnsatisfiablePosition(
                 "The constraint store has no satisfying assignment. "
@@ -446,6 +458,19 @@ class CLPAgent:
         if interior_guess is not None:
             return _move(state, result, Action.reveal(*interior_guess), DecisionStatus.FALLBACK, interior_guess)
         raise UnsatisfiablePosition("The visible grid has no hidden cell left to play.")
+
+    def proof(self, state: VisibleState, result: QueryResult, cell: Cell) -> tuple[Action, Reasoning]:
+        """Reveal one proved safe cell, or flag one proved mine.
+
+        ``decide`` can return a fallback while other cells stay proved. This
+        returns the proof for one of those cells and does not run a query.
+        The explanation is the same text ``decide`` uses for that proof.
+        """
+        if cell in result.proved_safe:
+            return _move(state, result, Action.reveal(*cell), DecisionStatus.PROVED_SAFE, cell)
+        if cell in result.proved_mine:
+            return _move(state, result, Action.flag(*cell), DecisionStatus.PROVED_MINE, cell)
+        raise ValueError(f"{cell} is not proved safe or proved mine")
 
 
 def _move(
