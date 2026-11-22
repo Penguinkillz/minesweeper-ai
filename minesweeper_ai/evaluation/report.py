@@ -25,7 +25,7 @@ def format_phase2_document(
     sections = [
         "# Phase 2 — Intermediate evaluation",
         "",
-        "Phase 2 repeats the Stage 5 measurements on intermediate boards. "
+        "Phase 2 repeats the beginner measurements on intermediate boards. "
         f"Every count in this document is taken from `{source}`. "
         "The summary, the CSV, the markdown table, and the SVG charts are rebuilt from that file. "
         "The Phase 1 log is a different file and is not an input.",
@@ -89,9 +89,9 @@ def _setup(
         "The first reveal is the environment's: mines are placed on that click, and the clicked cell is excluded. "
         "Decision index 0 is that opening reveal.",
         "",
-        "The three agents are the Stage 5 factories. "
+        "The three agents are the published factories. "
         "`CLPAgent()` and `MCMCAgent(sampler_seed=0)` are constructed with no node cap. "
-        "`DecisionTreeAgent.from_saved()` loads the Stage 4 tree. "
+        "`DecisionTreeAgent.from_saved()` loads the saved tree. "
         "This run does not call the training script.",
         "",
         f"The run record says phase {run.get('phase')}, "
@@ -308,7 +308,7 @@ def _tree_metrics(summary: Mapping[str, object]) -> str:
     if not isinstance(metrics, dict) or not metrics:
         return "The summary of this log has no copied decision-tree metric lines.\n"
     lines = [
-        f"`{path}` is the Stage 4 file. The lines below are copied from the summary, which copies that file. "
+        f"`{path}` is the saved metrics file. The lines below are copied from the summary, which copies that file. "
         "They are not counted from the Phase 2 games, and this run does not fit the tree.",
         "",
     ]
@@ -361,7 +361,7 @@ def _limits(summary: Mapping[str, object], decisions: Sequence[Mapping[str, obje
             f"Local-only reveals counted as guaranteed-safe: {local_safe}. "
             f"Decision-tree guaranteed-safe reveals: {tree_safe}.",
             "",
-            "It does not refit the tree. The train, validation, and test lines above are the Stage 4 file.",
+            "It does not refit the tree. The train, validation, and test lines above are the saved metrics file.",
             "",
             "It does not add a solver, and it does not change how `act` chooses a cell. "
             f"Decision lines in the log: {len(decisions)}.",

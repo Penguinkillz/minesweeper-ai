@@ -1,7 +1,6 @@
 """Reveal, flood-fill, flag toggle, win, loss, and the safe first click.
 
-Actions this environment accepts are ``reveal(row, column)`` and
-``flag(row, column)``. The agent Action type belongs to a later stage.
+The environment accepts ``reveal(row, column)`` and ``flag(row, column)``.
 """
 
 import enum
@@ -111,7 +110,7 @@ class Game:
 
 
 def run_scripted_beginner_game(seed: int = PUBLISHED_BEGINNER_SEED) -> dict[str, object]:
-    """Play the Stage 1 demonstration on the published beginner seed.
+    """Play the demonstration on the published beginner seed.
 
     This script reads the hidden map so it can point at a zero and at a mine.
     That is the environment showing its own rules. It is not an agent.
@@ -214,7 +213,7 @@ def _revealed(game: Game) -> set[tuple[int, int]]:
 
 def main() -> None:
     summary = run_scripted_beginner_game()
-    print("Stage 1 scripted beginner game")
+    print("Scripted beginner game")
     for key, value in summary.items():
         print(f"{key}: {value}")
     if not summary["ok"]:

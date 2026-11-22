@@ -3,9 +3,9 @@
 The mine set stored here is the hidden layer. It is for numbering, win and
 loss, and tests of this environment. VisibleState in view.py does not carry it.
 
-Stage 1 implementation choice, from the architecture plan: mines are placed
-when the first cell is revealed, and that cell is excluded. Neighbours of the
-clicked cell may still be mines.
+Mines are placed when the first cell is revealed, and that cell is excluded.
+The opening click is not an agent move. Neighbours of the clicked cell may
+still be mines.
 """
 
 import enum
@@ -15,7 +15,7 @@ BEGINNER_ROWS = 9
 BEGINNER_COLS = 9
 BEGINNER_MINES = 10
 
-# Published beginner game used by the Stage 1 demonstration and tests.
+# Beginner board used by the demonstration and the tests.
 PUBLISHED_BEGINNER_SEED = 0
 PUBLISHED_FIRST_CLICK = (0, 0)
 

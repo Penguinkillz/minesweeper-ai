@@ -1,0 +1,48 @@
+features: is_frontier, adj_clue_count, hidden_neighbours, flagged_neighbours, min_ratio, max_ratio, mean_ratio, naive_probability, min_effective, max_effective, forced_clues, density, naive_over_density, hidden_total, frontier_size, border_distance
+train_rows=86617 (intermediate x4) validation_rows=12190
+validation = beginner validation boards + intermediate boards of shard part1250, held out of training
+
+grid depth=6 min_leaf=20 validation_log_loss=0.5007
+grid depth=10 min_leaf=20 validation_log_loss=0.4955
+grid depth=10 min_leaf=60 validation_log_loss=0.4971
+
+selected max_depth=10 min_samples_leaf=20
+
+[beginner validation] rows=10286 mine_share=0.2497
+  forest     log_loss=0.4832 brier=0.1570
+  naive_clue log_loss=0.5909 brier=0.1939
+  density    log_loss=0.6065 brier=0.1997
+  exact      log_loss=0.4594 brier=0.1474
+  pick_mine_rate forest     113/1036 = 0.1091
+  pick_mine_rate naive_clue 128/1036 = 0.1236
+  pick_mine_rate exact      123/1036 = 0.1187
+  pick_mine_rate density    390/1036 = 0.3764
+[intermediate validation] rows=1904 mine_share=0.3062
+  forest     log_loss=0.5591 brier=0.1891
+  naive_clue log_loss=0.7551 brier=0.2407
+  density    log_loss=0.6904 brier=0.2349
+  exact      log_loss=0.5433 brier=0.1812
+  pick_mine_rate forest     20/131 = 0.1527
+  pick_mine_rate naive_clue 17/131 = 0.1298
+  pick_mine_rate exact      23/131 = 0.1756
+  pick_mine_rate density    68/131 = 0.5191
+[beginner test] rows=10676 mine_share=0.2422
+  forest     log_loss=0.4841 brier=0.1570
+  naive_clue log_loss=0.5691 brier=0.1881
+  density    log_loss=0.5958 brier=0.1952
+  exact      log_loss=0.4574 brier=0.1470
+  pick_mine_rate forest     130/1053 = 0.1235
+  pick_mine_rate naive_clue 144/1053 = 0.1368
+  pick_mine_rate exact      108/1053 = 0.1026
+  pick_mine_rate density    374/1053 = 0.3552
+
+[intermediate test] rows=883 mine_share=0.3137
+  forest     log_loss=0.5469 brier=0.1837
+  naive_clue log_loss=0.7463 brier=0.2509
+  density    log_loss=0.7462 brier=0.2563
+  exact      log_loss=0.4973 brier=0.1630
+  pick_mine_rate forest     14/82 = 0.1707
+  pick_mine_rate naive_clue 13/82 = 0.1585
+  pick_mine_rate exact      13/82 = 0.1585
+  pick_mine_rate density    36/82 = 0.4390
+

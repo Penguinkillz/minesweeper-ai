@@ -1,1 +1,1 @@
-"""Stage 6 window. Play uses the existing environment, the three agents, and the hybrid."""
+"""Window for play. Uses the environment and the saved agents."""

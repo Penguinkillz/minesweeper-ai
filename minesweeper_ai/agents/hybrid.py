@@ -1,7 +1,4 @@
-"""Hybrid player. CLP supplies every proof it has. Otherwise one MCMC regime guesses.
-
-This agent does not replace CLP, MCMC, or the decision tree. It calls the
-first two. It does not fit a tree, and it does not change their algorithms.
+"""Hybrid player. CLP supplies every proof. Otherwise one MCMC regime guesses.
 
 Decision rule:
 

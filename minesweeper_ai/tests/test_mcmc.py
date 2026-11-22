@@ -29,7 +29,7 @@ from minesweeper_ai.env.view import VisibleCell, VisibleState
 Cell = tuple[int, int]
 
 # Fixed sampler seed for the two-cell Regime B check. The tolerance is the
-# Stage 0 sample size (burn-in 50, retain 200), not a tuned win rate.
+# Burn-in 50 and 200 retained sweeps. Not chosen to raise a win rate.
 TWO_CELL_SEED = 0
 
 
@@ -312,7 +312,7 @@ class ExactMarginalTests(unittest.TestCase):
 
 
 class RegimeBTests(unittest.TestCase):
-    def test_two_cell_walk_is_within_the_stage_0_tolerance(self) -> None:
+    def test_two_cell_walk_is_within_tolerance(self) -> None:
         # The pair kernel connects the two legal states, so this one fixture
         # is irreducible by hand. The 0.05 tolerance applies here only.
         state = two_cell()

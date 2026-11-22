@@ -1,4 +1,4 @@
-"""Measurements from section 9, computed from a harness log.
+"""Counts and ratios read from a harness log.
 
 Nothing in this module is a win rate, a mine-hit rate, or an MCMC fraction
 written down in advance. Every figure is a count or a ratio of counts read
@@ -91,7 +91,7 @@ def is_uncertain_post_opening_reveal(record: Mapping[str, object]) -> bool:
 
 
 def summarize(records: Sequence[Mapping[str, object]]) -> dict[str, object]:
-    """Build the section 9 table from log records alone.
+    """Build the summary table from log records alone.
 
     Game-record counters are not read. A game line supplies the outcome and
     the wall-clock time, which are not otherwise on the decision lines. Move
@@ -127,11 +127,10 @@ def summarize_log(path: Path) -> dict[str, object]:
 
 
 def attach_decision_tree_metrics(summary: dict[str, object], path: Path | None = None) -> dict[str, object]:
-    """Copy the Stage 4 metric lines into the summary.
+    """Copy the saved decision-tree metric lines into the summary.
 
-    The tree is not fit again. The file written by Stage 4 is the source.
-    Lines that record one error are kept. The validation grid is left in
-    that file and is not rewritten here.
+    The tree is not fit again. The metrics file is the source. Lines that
+    record one error are kept. The validation grid stays in that file.
     """
     metrics_path = path or DECISION_TREE_METRICS
     copied: dict[str, str] = {}

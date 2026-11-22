@@ -1,12 +1,12 @@
-"""The Stage 6 window.
+"""Minesweeper window.
 
 Launch it from the repository root:
 
     python3 -m minesweeper_ai.ui.app
 
 tkinter and a display are required. The play rules live in ``session.py``.
-The comparison text is the Phase 1 dashboard, which reads the log. This
-file does not choose a cell and does not count a win.
+The comparison tab reads the saved beginner summary. This file does not
+choose a cell and does not count a win.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from minesweeper_ai.ui.session import (
 )
 
 MISSING_TK_MESSAGE = (
-    "A display and the Python tkinter module are required to open the Stage 6 window. "
+    "A display and the Python tkinter module are required to open the window. "
     "Install tkinter for this Python, then from the repository root run: "
     "python3 -m minesweeper_ai.ui.app"
 )
@@ -121,7 +121,7 @@ class MinesweeperWindow:
                 "Start and Reset apply the difficulty and the seed. "
                 "The first Step is the environment's safe opening reveal, for every agent. "
                 "Later Steps ask the selected agent for one move. "
-                "Hybrid is a fourth player: a CLP proof, otherwise one MCMC regime. "
+                "Hybrid takes a CLP proof, otherwise one MCMC regime. "
                 "Manual play: click to reveal, right-click to flag."
             ),
         )
@@ -291,7 +291,7 @@ class MinesweeperWindow:
         try:
             text = "\n".join(load_phase1_dashboard().lines())
         except (OSError, ValueError) as exc:
-            text = "The comparison view did not load the Phase 1 log.\n" + str(exc)
+            text = "The comparison view did not load.\n" + str(exc)
         self._set_text(self.comparison, text)
 
     @staticmethod

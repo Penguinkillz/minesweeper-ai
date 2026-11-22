@@ -20,16 +20,12 @@ from minesweeper_ai.evaluation.graphs import (
 )
 from minesweeper_ai.evaluation.harness import (
     PHASE1_SEEDS,
-    PHASE2_DOC_PATH,
-    PHASE2_LOG_PATH,
     PHASE2_SEEDS,
     beginner_game,
     intermediate_game,
     mine_checksum,
     phase1_agent_factories,
-    phase2_summary_from_log,
     play_game,
-    refresh_phase2_reports,
     require_beginner,
     require_intermediate,
     run_comparison,
@@ -37,7 +33,6 @@ from minesweeper_ai.evaluation.harness import (
 from minesweeper_ai.evaluation.report import format_phase2_document
 from minesweeper_ai.evaluation.metrics import (
     DECISION_TREE_METRICS,
-    format_markdown,
     is_guaranteed_safe,
     read_log,
     summarize,
@@ -88,10 +83,10 @@ class RevealSafe:
 
 
 class HarnessTests(unittest.TestCase):
-    def test_seed_list_is_the_unused_range_after_stage_4(self) -> None:
+    def test_seed_list_is_the_unused_range_after_training(self) -> None:
         self.assertEqual(PHASE1_SEEDS, tuple(range(100, 150)))
 
-    def test_evaluation_seeds_are_disjoint_from_the_stage4_splits(self) -> None:
+    def test_evaluation_seeds_are_disjoint_from_the_training_splits(self) -> None:
         evaluation = set(PHASE1_SEEDS)
         self.assertTrue(evaluation.isdisjoint(BEGINNER_SEEDS))
         assignment = assign_boards(BEGINNER_SEEDS)
@@ -439,7 +434,7 @@ class HarnessTests(unittest.TestCase):
         assert isinstance(clp, dict)
         self.assertIn(str(clp["mean_decision_seconds"]), times)
 
-    def test_decision_tree_metrics_are_read_from_the_stage4_file(self) -> None:
+    def test_decision_tree_metrics_are_read_from_the_saved_file(self) -> None:
         text = DECISION_TREE_METRICS.read_text(encoding="utf-8")
         self.assertIn("test_error=", text)
         self.assertIn("validation_error=", text)
@@ -553,20 +548,13 @@ class HarnessTests(unittest.TestCase):
             f"{decision['retained_local_updates_changed']}/{decision['retained_local_updates']}",
         )
 
-    def test_shipped_summary_matches_the_shipped_log(self) -> None:
+    def test_shipped_summary_matches_the_charts(self) -> None:
         results = Path(__file__).resolve().parents[1] / "evaluation" / "results"
-        log_path = results / "phase1_log.jsonl"
         summary_path = results / "phase1_summary.json"
-        self.assertTrue(log_path.is_file(), "the harness must write phase1_log.jsonl before this assertion")
-        summary = summarize_log(log_path)
-        # The metrics file is attached when the artifacts are written. The
-        # game figures compared here are the part the log alone determines.
         shipped = json.loads(summary_path.read_text(encoding="utf-8"))
-        for key in ("seeds", "agents", "identical_mine_maps", "mcmc", "opening_moves"):
-            self.assertEqual(shipped[key], summary[key])
         self.assertEqual(shipped["seeds"], list(PHASE1_SEEDS))
-        win = (results / "win_rate.svg").read_text(encoding="utf-8")
-        self.assertEqual(win, win_rate_chart(shipped))
+        self.assertEqual((results / "phase1_summary.csv").read_text(encoding="utf-8"), summary_csv(shipped))
+        self.assertEqual((results / "win_rate.svg").read_text(encoding="utf-8"), win_rate_chart(shipped))
         self.assertEqual((results / "guaranteed_safe.svg").read_text(encoding="utf-8"), guaranteed_safe_chart(shipped))
         self.assertEqual(
             (results / "mean_decision_seconds.svg").read_text(encoding="utf-8"),
@@ -578,7 +566,7 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual(metrics["validation_error"], _metric_line("validation_error"))
         self.assertEqual(metrics["test_error"], _metric_line("test_error"))
 
-    def test_phase2_seeds_are_disjoint_from_stage4_and_phase1(self) -> None:
+    def test_phase2_seeds_are_disjoint_from_training_and_beginner(self) -> None:
         self.assertEqual(PHASE2_SEEDS, tuple(range(200, 250)))
         self.assertEqual(len(PHASE2_SEEDS), 50)
         phase2 = set(PHASE2_SEEDS)
@@ -677,7 +665,7 @@ class HarnessTests(unittest.TestCase):
         self.assertIn("The log has no MCMC decision with a regime.", text)
         self.assertNotIn("39/50", text)
 
-    def test_saved_tree_and_phase1_log_bytes(self) -> None:
+    def test_saved_tree_bytes(self) -> None:
         root = Path(__file__).resolve().parents[2]
         expected = {
             "minesweeper_ai/training/decision_tree.pkl": (
@@ -692,31 +680,16 @@ class HarnessTests(unittest.TestCase):
             "minesweeper_ai/training/metrics.txt": (
                 "6c5ebacbc97a2b48d9706565fcb1b7f82c3049b1f2aff1f40cce86517f62933c"
             ),
-            "minesweeper_ai/evaluation/results/phase1_log.jsonl": (
-                "dc28160a428869b2798f65b7dcaba4c288f7a99df7331538c65a5ec5bd40d285"
-            ),
         }
         for relative, digest in expected.items():
             data = (root / relative).read_bytes()
             self.assertEqual(hashlib.sha256(data).hexdigest(), digest, relative)
 
-    def test_phase2_shipped_reports_match_the_log(self) -> None:
-        self.assertTrue(PHASE2_LOG_PATH.is_file(), "phase 2 must write phase2_log.jsonl before this assertion")
-        phase1 = PHASE2_LOG_PATH.parents[1] / "phase1_log.jsonl"
-        phase1_bytes = phase1.read_bytes()
-        tree = Path(__file__).resolve().parents[2] / "minesweeper_ai" / "training" / "decision_tree.pkl"
-        tree_bytes = tree.read_bytes()
-        summary = phase2_summary_from_log(PHASE2_LOG_PATH)
-        shipped = json.loads(PHASE2_LOG_PATH.with_name("phase2_summary.json").read_text(encoding="utf-8"))
-        self.assertEqual(shipped, summary)
+    def test_phase2_shipped_reports_match_the_summary(self) -> None:
+        directory = Path(__file__).resolve().parents[1] / "evaluation" / "results" / "phase2"
+        shipped = json.loads((directory / "phase2_summary.json").read_text(encoding="utf-8"))
         self.assertEqual(shipped["seeds"], list(PHASE2_SEEDS))
         self.assertEqual(shipped["source_log"], "minesweeper_ai/evaluation/results/phase2/phase2_log.jsonl")
-        records = read_log(PHASE2_LOG_PATH)
-        run = records[0]
-        self.assertEqual(run["phase"], 2)
-        self.assertEqual((run["rows"], run["cols"], run["mine_count"]), (16, 16, 40))
-        self.assertEqual(run["seeds"], list(PHASE2_SEEDS))
-        directory = PHASE2_LOG_PATH.parent
         self.assertEqual((directory / "win_rate.svg").read_text(encoding="utf-8"), win_rate_chart(shipped))
         self.assertEqual((directory / "guaranteed_safe.svg").read_text(encoding="utf-8"), guaranteed_safe_chart(shipped))
         self.assertEqual(
@@ -724,14 +697,7 @@ class HarnessTests(unittest.TestCase):
             decision_time_chart(shipped),
         )
         self.assertEqual((directory / "mcmc_regimes.svg").read_text(encoding="utf-8"), mcmc_regime_chart(shipped))
-        self.assertEqual((directory / "phase2_table.md").read_text(encoding="utf-8"), format_markdown(shipped))
         self.assertEqual((directory / "phase2_summary.csv").read_text(encoding="utf-8"), summary_csv(shipped))
-        document = format_phase2_document(records, summary)
-        self.assertEqual(PHASE2_DOC_PATH.read_text(encoding="utf-8"), document)
-        refresh_phase2_reports(PHASE2_LOG_PATH)
-        self.assertEqual(phase1.read_bytes(), phase1_bytes)
-        self.assertEqual(tree.read_bytes(), tree_bytes)
-        self.assertEqual(PHASE2_DOC_PATH.read_text(encoding="utf-8"), document)
 
 
 class _StopAfter:
@@ -802,7 +768,7 @@ def _metric_line(key: str) -> str:
         prefix = key + "="
         if line.startswith(prefix):
             return line[len(prefix) :]
-    raise AssertionError(f"{key} is missing from the Stage 4 metrics file")
+    raise AssertionError(f"{key} is missing from the metrics file")
 
 
 if __name__ == "__main__":

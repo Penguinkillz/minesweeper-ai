@@ -1,7 +1,6 @@
 """Shared decision interface for every agent.
 
-Section 3 of the architecture plan: visible state goes in, and one action
-plus a reasoning record comes out. Later agents use the same types. This
+Visible state goes in. One action and a reasoning record come out. This
 module has no solver.
 """
 
@@ -69,9 +68,8 @@ class Reasoning:
 
     A proved status is a finished proof, so ``uncertain`` is false.
     ``estimated``, ``model_prediction``, and ``fallback`` are not proofs,
-    so ``uncertain`` is true. Section 4.4 says an uncertain CLP reveal
-    "stays uncertain". The shared status list has no sixth value, so that
-    reveal uses ``fallback``.
+    so ``uncertain`` is true. An uncertain reveal uses ``fallback``. The
+    shared status list has no sixth value.
     """
 
     def __init__(

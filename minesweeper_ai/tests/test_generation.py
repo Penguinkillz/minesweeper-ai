@@ -1,7 +1,7 @@
 """Board generation: size, mine count, seeds, and reset.
 
 The hidden mine map is read here because these tests check the environment.
-Agents are not part of this stage and must not be given that map.
+Agents must not be given that map.
 """
 
 import unittest

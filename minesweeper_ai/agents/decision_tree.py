@@ -1,21 +1,7 @@
-"""ID3 decision tree for frontier cells.
+"""Decision tree for frontier cells.
 
-Slide mapping (``19-AI-DecisionTree.pdf`` and the Basic ML deck):
-
-| Slide idea | Where it is in this file |
-| --- | --- |
-| Entropy, with ``0 log 0 = 0`` | ``entropy`` |
-| Information gain | ``information_gain`` |
-| Threshold midpoints and ``IG*`` | ``threshold_candidates``, ``best_threshold`` |
-| Base cases one and two | ``_fit_node`` |
-| Fixed depth and minimum samples | ``_fit_node`` |
-| Rejected base case three (XOR) | ``stop_on_zero_gain``, off unless a test turns it on |
-| Majority leaf and mine frequency | ``Leaf`` |
-| Train on frontier cells, play on frontier cells | ``frontier_cells``, ``DecisionTreeAgent`` |
-
-The hidden mine set is not an input. ``features_for_cell`` reads ``VisibleState``
-only. Labels are attached later, by the dataset generator, and are not a column
-of the feature vector.
+Labels are attached by the dataset generator and are not a feature. The
+hidden mine set is not an input. A leaf frequency is not a proof.
 """
 
 import math
@@ -32,8 +18,7 @@ from minesweeper_ai.env.view import VisibleState
 
 AGENT_NAME = "decision_tree"
 
-# Section 6.3. The tree never returns a proved status, so this count is 0
-# for every run. It is not a win rate.
+# The tree never returns a proved status.
 GUARANTEED_SAFE_MOVES = 0
 
 FEATURE_NAMES = (
@@ -356,7 +341,7 @@ def _fit_node(
     # Base case two: every remaining attribute is constant.
     if not varying:
         return Leaf(safe, mine)
-    # Slide 24 controls. These are what stop the recursion, not a gain cutoff.
+    # Depth and leaf size stop the recursion. A zero gain does not.
     if depth >= max_depth or len(examples) < min_samples_leaf:
         return Leaf(safe, mine)
 
@@ -443,10 +428,7 @@ def _better_split(
     candidate: tuple[str, int, float | None, float],
     current: tuple[str, int, float | None, float],
 ) -> bool:
-    """Higher information gain wins. Ties keep the earlier feature, then the smaller threshold.
-
-    The decks do not specify a tie. The earlier feature is the order fixed in section 6.3.
-    """
+    """Higher information gain wins. Ties keep the earlier feature, then the smaller threshold."""
     _kind, index, threshold, gain = candidate
     _current_kind, current_index, current_threshold, current_gain = current
     if gain != current_gain:
@@ -534,7 +516,7 @@ def first_hidden_cell(state: VisibleState) -> tuple[int, int]:
 
 
 def features_for_cell(state: VisibleState, row: int, column: int) -> tuple[object, ...]:
-    """The section 6.3 vector. This function does not take a mine set."""
+    """Feature vector for one cell. This function does not take a mine set."""
     if state.cells[row][column].state is not CellState.HIDDEN:
         raise ValueError("features are computed for a hidden cell")
     revealed: list[tuple[int, int, int]] = []
@@ -554,7 +536,7 @@ def features_for_cell(state: VisibleState, row: int, column: int) -> tuple[objec
             for clue_row, clue_column, number in revealed
         )
     else:
-        # Sentinel from section 6.3. Frontier cells have a clue; the sentinel covers the rest.
+        # Frontier cells have a clue. This sentinel covers a cell with none.
         min_clue = -1
         min_slack = 1.0
     return (

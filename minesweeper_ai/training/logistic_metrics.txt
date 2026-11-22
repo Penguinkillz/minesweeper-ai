@@ -1,0 +1,59 @@
+train_rows=86617 (intermediate x4), same rows as the forest
+
+weights on standardised features:
+  is_frontier          -0.669
+  naive_over_density   +0.444
+  min_ratio            +0.361
+  mean_ratio           +0.306
+  density              +0.199
+  max_ratio            +0.191
+  max_effective        -0.128
+  min_effective        +0.115
+  hidden_total         +0.102
+  naive_probability    +0.092
+  frontier_size        -0.074
+  border_distance      -0.065
+  adj_clue_count       +0.029
+  hidden_neighbours    +0.006
+  flagged_neighbours   +0.000
+  forced_clues         +0.000
+  bias                 -1.173
+
+[beginner validation] rows=10286 mine_share=0.2497
+  forest     log_loss=0.5026 brier=0.1646
+  naive_clue log_loss=0.5909 brier=0.1939
+  density    log_loss=0.6065 brier=0.1997
+  exact      log_loss=0.4594 brier=0.1474
+  pick_mine_rate forest     124/1036 = 0.1197
+  pick_mine_rate naive_clue 128/1036 = 0.1236
+  pick_mine_rate exact      123/1036 = 0.1187
+  pick_mine_rate density    390/1036 = 0.3764
+[intermediate validation] rows=1904 mine_share=0.3062
+  forest     log_loss=0.5634 brier=0.1901
+  naive_clue log_loss=0.7551 brier=0.2407
+  density    log_loss=0.6904 brier=0.2349
+  exact      log_loss=0.5433 brier=0.1812
+  pick_mine_rate forest     26/131 = 0.1985
+  pick_mine_rate naive_clue 17/131 = 0.1298
+  pick_mine_rate exact      23/131 = 0.1756
+  pick_mine_rate density    68/131 = 0.5191
+[beginner test] rows=10676 mine_share=0.2422
+  forest     log_loss=0.5009 brier=0.1636
+  naive_clue log_loss=0.5691 brier=0.1881
+  density    log_loss=0.5958 brier=0.1952
+  exact      log_loss=0.4574 brier=0.1470
+  pick_mine_rate forest     132/1053 = 0.1254
+  pick_mine_rate naive_clue 144/1053 = 0.1368
+  pick_mine_rate exact      108/1053 = 0.1026
+  pick_mine_rate density    374/1053 = 0.3552
+
+[intermediate test] rows=883 mine_share=0.3137
+  forest     log_loss=0.5674 brier=0.1927
+  naive_clue log_loss=0.7463 brier=0.2509
+  density    log_loss=0.7462 brier=0.2563
+  exact      log_loss=0.4973 brier=0.1630
+  pick_mine_rate forest     15/82 = 0.1829
+  pick_mine_rate naive_clue 13/82 = 0.1585
+  pick_mine_rate exact      13/82 = 0.1585
+  pick_mine_rate density    36/82 = 0.4390
+

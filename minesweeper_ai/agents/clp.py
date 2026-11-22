@@ -1,24 +1,15 @@
-"""CLP Minesweeper agent: finite domains, delayed sums, labeling on the frontier.
+"""Constraint logic programming agent: domains, delayed sums, frontier labeling.
 
-Slide mapping (``12-AI-PROLOG.pdf``), written out so the steps can be walked:
+Each frontier cell is a Boolean domain. Clue sums are posted and propagated
+to a fixed point. Labeling searches the frontier in row-major order, trying
+0 then 1. The interior is not labeled. A finished frontier assignment is
+accepted when the residual mine count ``r`` satisfies ``0 ≤ r ≤ |U_unfixed|``.
+That checks that some interior arrangement exists. The arrangements are not built.
 
-| Slide idea | Where it is in this file |
-| --- | --- |
-| Finite-domain Boolean, 1 = mine and 0 = safe | ``domains``, each a subset of ``{0, 1}`` |
-| Delayed ``#=`` posted before the variable is ground | ``SumConstraint`` stored and woken later |
-| Bounds propagation to a fixed point | ``propagate`` / ``_revise`` |
-| Empty domain, the fail port | ``_revise`` returns failure; the search in ``query`` backtracks |
-| ``labeling(Vars)`` with a chosen order | the search in ``query``, frontier only, row-major, values 0 then 1 |
-| The four ports call, exit, redo, fail | the trace strings in that search |
-| Yes / No query | ``query`` returns solutions, or an unsatisfiable store |
-
-The interior is not labeled. A finished frontier assignment is accepted when
-the residual mine count ``r`` satisfies ``0 ≤ r ≤ |U_unfixed|``. That is the
-existence check for an interior arrangement. The arrangements are not built.
-
-A proof is one of: a domain reduced to one value, a finished failed labeling,
-or a finished residual test. A search that hits ``node_limit`` is truncated
-and proves nothing beyond domains that propagation had already reduced.
+A proof is a domain reduced to one value, a finished failed labeling, or a
+finished residual test. A search that hits ``node_limit`` is truncated and
+proves nothing beyond domains that propagation had already reduced. A guess,
+when one is required, is row-major and is not a proof.
 """
 
 from collections.abc import Iterable
@@ -34,8 +25,7 @@ Cell = tuple[int, int]
 class UnsatisfiablePosition(Exception):
     """The visible clues and K have no legal layout.
 
-    Section 4.4: the log records the failure. No click is invented from an
-    empty solution set.
+    No click is invented from an empty solution set.
     """
 
 
@@ -395,7 +385,7 @@ def _proofs(
 class CLPAgent:
     """Play from ``VisibleState`` only. The hidden mine set is not an argument.
 
-    Decision order, from section 4.4:
+    Decision order:
 
     - If any cell is proved safe, reveal the row-major first. Status
       ``proved_safe``.
@@ -406,11 +396,10 @@ class CLPAgent:
     - If the frontier has no remaining reveal, reveal the row-major first
       interior cell that is not a proved mine. Uncertain.
 
-    Flagged cells are not reveal candidates. They already store a mine proof,
-    so once every frontier cell is flagged the next uncertain reveal is an
-    interior cell, which is the plan's empty-frontier case for what is left
-    to play. An uncertain reveal is never played as if one accepted frontier
-    assignment were the hidden board.
+    Flagged cells are not reveal candidates. Once every frontier cell is
+    flagged, the next uncertain reveal is an interior cell. An uncertain
+    reveal is never played as if one accepted frontier assignment were the
+    hidden board.
     """
 
     def __init__(self, node_limit: int | None = None) -> None:
@@ -546,8 +535,7 @@ def _explain(state: VisibleState, result: QueryResult, cell: Cell, status: Decis
             f"Finished labeling accepts {len(result.solutions)} frontier assignments, "
             f"and {_fmt(cell)} is not the same value in all of them. "
             "Both values remain possible, so this reveal is not a proof. "
-            "One accepted assignment is not played as the hidden board. "
-            "Ports used on the frontier: call, exit, redo, fail."
+            "One accepted assignment is not played as the hidden board."
         )
     return (
         f"{reason} Frontier size {len(result.frontier)}. "

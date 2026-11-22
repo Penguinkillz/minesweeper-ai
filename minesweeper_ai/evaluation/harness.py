@@ -1,29 +1,21 @@
-"""Evaluation harness for Phase 1 and Phase 2.
+"""Evaluation harness for the beginner and intermediate seed lists.
 
-Both phases give each agent a fresh board. The agents do not share a board
-and they do not alternate moves. The log written for a phase is the only
-input to that phase's summary, table, charts, and, for Phase 2, the write-up.
+Each agent receives a fresh board. Agents do not share a board and do not
+alternate moves.
 
-Phase 1 plays the integers 100 through 149 on beginner boards, 9×9 with 10
-mines. ``require_beginner`` still refuses a 16×16 board, and the Phase 1
-command still writes ``phase1_log.jsonl``. Stage 4 used seeds 0 through 99,
-so this list does not repeat a training, validation, or test board.
+Beginner games use seeds 100 through 149 on 9×9 boards with 10 mines. The
+decision tree is fit on seeds 0 through 99, so this list does not repeat a
+training board.
 
-Phase 2 plays the integers 200 through 249 on intermediate boards, 16×16
-with 40 mines. Those seeds are disjoint from Stage 4 and from Phase 1.
-``require_intermediate`` refuses any other size. The Phase 2 files live
-under ``results/phase2/`` and do not replace the Phase 1 log.
+Intermediate games use seeds 200 through 249 on 16×16 boards with 40 mines.
 
-Neither seed list is revised after a run to change a ranking. The agents
-are the Stage 2, 3, and 4 defaults. CLP and MCMC are constructed with no
-node cap. The decision tree is the saved Stage 4 model, loaded and not
-retrained. The MCMC sampler seed is 0 on every game, which is the seed the
-Stage 3 traces use. It is not chosen to raise a win rate.
+CLP and MCMC are constructed with no node cap. The decision tree is the
+saved model, loaded and not retrained. The MCMC sampler seed is 0 on every
+game.
 
 A decision that raises because the clues have no legal layout, or because a
 capped search accepts nothing, ends the game as aborted. No click is invented.
-The decision cap is one action per cell. A game that is still going after
-that many actions is aborted, and the game line records why.
+The decision cap is one action per cell.
 """
 
 from __future__ import annotations
@@ -58,13 +50,10 @@ from minesweeper_ai.evaluation.metrics import (
     write_summary,
 )
 
-# The fifty integers after the Stage 4 boards. Stage 4 fits on seeds 0–99
-# (train 0–59, validation 60–79, test 80–99). These seeds are unused by that
-# split. They are not added or removed because of how an agent finished.
+# Seeds 100–149. The tree is fit on seeds 0–99, so these boards are not in that split.
 PHASE1_SEEDS: tuple[int, ...] = tuple(range(100, 150))
 
-# The fifty integers after Phase 1. They stay disjoint from Stage 4 (0–99)
-# and from Phase 1 (100–149). They are not shortened to change a ranking.
+# Seeds 200–249. Disjoint from the tree boards (0–99) and the beginner list (100–149).
 PHASE2_SEEDS: tuple[int, ...] = tuple(range(200, 250))
 
 INTERMEDIATE_ROWS = 16
@@ -335,10 +324,10 @@ def refresh_reports(log_path: Path = LOG_PATH) -> dict[str, object]:
 
 
 def phase2_summary_from_log(log_path: Path = PHASE2_LOG_PATH) -> dict[str, object]:
-    """Read the Phase 2 log and attach the Stage 4 metric lines.
+    """Read the intermediate log and attach the saved decision-tree metrics.
 
     The game figures come from the log. The metric lines are copied from the
-    Stage 4 file and are not a new fit. ``source_log`` is the repository
+    metrics file and are not a new fit. ``source_log`` is the repository
     path of this run, so a different working directory does not change it.
     """
     summary = summarize_log(log_path)

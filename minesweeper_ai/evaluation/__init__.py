@@ -1,1 +1,1 @@
-"""Evaluation: one seed list per phase, three separate boards, one log per phase."""
+"""Evaluation harness, summaries, and charts."""

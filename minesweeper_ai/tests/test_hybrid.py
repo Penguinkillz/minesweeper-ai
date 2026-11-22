@@ -7,6 +7,7 @@ The harness factories stay the three original agents.
 
 import unittest
 from fractions import Fraction
+from pathlib import Path
 
 from minesweeper_ai.agents.base import Action, ActionKind, DecisionStatus, Reasoning
 from minesweeper_ai.agents.clp import CLPAgent, QueryResult, query
@@ -20,6 +21,12 @@ from minesweeper_ai.evaluation.harness import (
     phase1_agent_factories,
 )
 from minesweeper_ai.ui.session import PLAYERS, PlaySession, describe_decision, phase1_agent
+
+
+def _bytes_if_present(path: Path) -> bytes | None:
+    if path.is_file():
+        return path.read_bytes()
+    return None
 
 Cell = tuple[int, int]
 
@@ -530,8 +537,8 @@ class WindowTests(unittest.TestCase):
         self.assertTrue(agent.mcmc_agent.exact_marginals)  # type: ignore[attr-defined]
 
     def test_opening_click_is_the_environment_before_hybrid_act(self) -> None:
-        phase1 = LOG_PATH.read_bytes()
-        phase2 = PHASE2_LOG_PATH.read_bytes()
+        phase1 = _bytes_if_present(LOG_PATH)
+        phase2 = _bytes_if_present(PHASE2_LOG_PATH)
         asked: list[VisibleState] = []
         real = PlaySession()
         real.configure(player="hybrid", seed=0, difficulty="beginner")
@@ -594,5 +601,5 @@ class WindowTests(unittest.TestCase):
             self.assertIs(seen[0].cells[0][0].state, CellState.REVEALED)
             self.assertEqual(second.cell, (1, 1))
             self.assertEqual(second.status, "fallback")
-        self.assertEqual(LOG_PATH.read_bytes(), phase1)
-        self.assertEqual(PHASE2_LOG_PATH.read_bytes(), phase2)
+        self.assertEqual(_bytes_if_present(LOG_PATH), phase1)
+        self.assertEqual(_bytes_if_present(PHASE2_LOG_PATH), phase2)

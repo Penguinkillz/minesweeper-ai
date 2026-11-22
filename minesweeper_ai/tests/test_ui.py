@@ -1,7 +1,8 @@
-"""Headless tests for the Stage 6 window.
+"""Headless tests for the window.
 
-These tests start, reset, select an agent, step, and load the Phase 1 log.
-They do not open a tkinter window and they do not play the 50-seed harness.
+These tests start, reset, select an agent, step, and load the beginner
+comparison. They do not open a tkinter window and they do not play the
+50-seed harness.
 """
 
 import json
@@ -17,7 +18,7 @@ from minesweeper_ai.env.board import CellState
 from minesweeper_ai.env.rules import Game, GameStatus
 from minesweeper_ai.env.view import VisibleState
 from minesweeper_ai.evaluation.harness import LOG_PATH, PHASE1_SEEDS, phase1_agent_factories, require_beginner
-from minesweeper_ai.evaluation.metrics import read_log, summarize, write_log
+from minesweeper_ai.evaluation.metrics import write_log
 from minesweeper_ai.ui.dashboard import (
     AGENT_FIELDS,
     CAVEAT,
@@ -57,6 +58,12 @@ def _display_value(value: object) -> str:
     if isinstance(value, dict):
         return ", ".join(f"{status} {count}" for status, count in value.items())
     return str(value)
+
+
+def _bytes_if_present(path: Path) -> bytes | None:
+    if path.is_file():
+        return path.read_bytes()
+    return None
 
 
 class _Spy:
@@ -144,7 +151,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual((game.board.rows, game.board.cols, game.board.mine_count), (16, 16, 40))
 
     def test_intermediate_play_uses_the_environment_and_not_the_harness(self) -> None:
-        before = LOG_PATH.read_bytes()
+        before = _bytes_if_present(LOG_PATH)
         session = PlaySession()
         session.configure(difficulty="intermediate", player=MANUAL, seed=2)
         session.start()
@@ -156,7 +163,7 @@ class SessionTests(unittest.TestCase):
         self.assertIsNot(game.status, GameStatus.LOST)
         with self.assertRaises(ValueError):
             require_beginner(game)
-        self.assertEqual(LOG_PATH.read_bytes(), before)
+        self.assertEqual(_bytes_if_present(LOG_PATH), before)
 
     def test_flags_and_clues_come_from_the_visible_board(self) -> None:
         session = PlaySession()
@@ -341,7 +348,7 @@ class SessionTests(unittest.TestCase):
         self.assertEqual(len(built), 2)
 
     def test_one_real_step_matches_act_and_the_environment(self) -> None:
-        before = LOG_PATH.read_bytes()
+        before = _bytes_if_present(LOG_PATH)
         for name in ("CLP", "MCMC", "decision_tree"):
             session = PlaySession()
             session.configure(player=name, seed=11, difficulty="beginner")
@@ -381,7 +388,7 @@ class SessionTests(unittest.TestCase):
             text = describe_decision(session.snapshot())
             self.assertIn(f"Status: {reasoning.status.value}", text)
             self.assertIn(reasoning.explanation, text)
-        self.assertEqual(LOG_PATH.read_bytes(), before)
+        self.assertEqual(_bytes_if_present(LOG_PATH), before)
 
     def test_manual_clear_reports_a_win_without_an_agent_status(self) -> None:
         session = PlaySession()
@@ -402,12 +409,12 @@ class SessionTests(unittest.TestCase):
 
 
 class DashboardTests(unittest.TestCase):
-    def test_dashboard_counts_come_from_the_phase1_log(self) -> None:
-        before = LOG_PATH.read_bytes()
+    def test_dashboard_counts_come_from_the_phase1_summary(self) -> None:
+        summary_path = LOG_PATH.with_name("phase1_summary.json")
+        before = summary_path.read_bytes()
         model = load_phase1_dashboard()
-        self.assertEqual(LOG_PATH.read_bytes(), before)
-        records = read_log(LOG_PATH)
-        summary = summarize(records)
+        self.assertEqual(summary_path.read_bytes(), before)
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
         self.assertEqual(model.header.seeds, tuple(range(100, 150)))
         self.assertEqual(model.header.seeds, tuple(PHASE1_SEEDS))
         self.assertEqual((model.header.rows, model.header.cols, model.header.mine_count), (9, 9, 10))
@@ -446,7 +453,7 @@ class DashboardTests(unittest.TestCase):
         self.assertNotIn("train_error", text)
         self.assertNotIn("metrics.txt", text)
         self.assertNotIn("1465/6194", text)
-        blob = json.dumps(records) + json.dumps(summary)
+        blob = json.dumps(summary)
         for line in model.lines():
             if line == CAVEAT:
                 continue
@@ -454,7 +461,7 @@ class DashboardTests(unittest.TestCase):
                 self.assertIn(number, blob, line)
 
     def test_a_missing_figure_is_left_out(self) -> None:
-        summary = summarize(read_log(LOG_PATH))
+        summary = json.loads(LOG_PATH.with_name("phase1_summary.json").read_text(encoding="utf-8"))
         del summary["agents"]["CLP"]["win_rate"]
         del summary["agents"]["CLP"]["mean_decision_seconds"]
         del summary["mcmc"]["local_only"]

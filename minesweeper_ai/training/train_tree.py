@@ -18,7 +18,7 @@ from minesweeper_ai.training.dataset import (
     split_by_board,
 )
 
-# Section 6.3. Depths 1 through 8, leaf minimums 1, 5, 10, and 20.
+# Depths 1 through 8, leaf minimums 1, 5, 10, and 20. Validation chooses.
 DEPTHS = (1, 2, 3, 4, 5, 6, 7, 8)
 LEAF_MINIMUMS = (1, 5, 10, 20)
 
@@ -54,7 +54,7 @@ def class_errors(tree: DecisionTree, examples: Sequence[Example]) -> dict[str, i
     """Mines predicted safe, and safe cells predicted mine.
 
     The overall error can look small because most frontier cells are safe.
-    These two counts are the class-wise errors from section 6.3.
+    These two counts are the class-wise errors.
     """
     mines = 0
     mines_predicted_safe = 0

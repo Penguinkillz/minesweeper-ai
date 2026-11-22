@@ -1,32 +1,21 @@
-"""MCMC Minesweeper agent: block Gibbs in two regimes that are never averaged.
-
-Slide mapping (``16-AI-MCMC.pdf``):
-
-| Slide idea | Where it is in this file |
-| --- | --- |
-| Monte Carlo estimate of an expectation | the retained frequency of each cell |
-| Gibbs as Metropolis–Hastings with ratio 1 | ``_resample_block`` |
-| Full conditional of a block | ``legal_block_assignments`` |
-| Detailed balance for that conditional | the Regime B explanation |
-| Aperiodicity by a self-loop mixture | ``SELF_LOOP_PROBABILITY`` inside ``_sweep`` |
+"""MCMC agent: exact marginals, or block Gibbs when the frontier is larger.
 
 The target is uniform on the legal mine layouts. A layout is legal when it
-meets every visible clue and the mine count K. The chain never stores an
+meets every visible clue and the mine count. The chain never stores an
 illegal layout, and it never reads the hidden mine map.
 
-Single-site Gibbs is not this agent. On the two-cell clue it cannot leave
-its start state. The unit test runs that chain. The player uses a block.
+Single-site Gibbs cannot leave its start state on the two-cell clue. The
+player uses a block.
 
-Regime A computes exact posterior marginals from a finished frontier
-enumeration and the binomial residual weights. It does not draw a layout.
-It runs only when ``|F| <= 16`` and the enumeration finishes. Marginal 0 is
-proved safe. Marginal 1 is proved mine. There is no burn-in and no local chain.
+Exact marginals come from a finished frontier enumeration and the binomial
+residual weights. No layout is drawn. This runs only when the frontier has
+at most 16 cells and the enumeration finishes. Marginal 0 is proved safe.
+Marginal 1 is proved mine. There is no burn-in and no local chain.
 
-Regime B is stochastic block Gibbs: the pair kernel and the clue-neighbourhood
-kernel, mixed with a self-loop. It runs when Regime A does not, and only from
-a legal start found within the same node cap. Every reveal is estimated. The
-text does not claim convergence and does not claim a unique stationary
-distribution.
+Otherwise the player runs stochastic block Gibbs: a pair kernel and a
+clue-neighbourhood kernel, mixed with a self-loop, from a legal start found
+within the same node cap. Every reveal in that regime is estimated. A
+sampled frequency of 0 is not a proof.
 """
 
 import math
@@ -43,7 +32,7 @@ from minesweeper_ai.env.view import VisibleState
 AGENT_NAME = "MCMC"
 Cell = tuple[int, int]
 
-# Section 5.3 and 5.5. These are the Stage 0 choices, not a fitted win rate.
+# Fixed sample sizes. They are not chosen to raise a win rate.
 FRONTIER_EXACT_LIMIT = 16
 BURN_IN_SWEEPS = 50
 RETAINED_SWEEPS = 200

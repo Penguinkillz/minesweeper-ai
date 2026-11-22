@@ -1,4 +1,4 @@
-"""VisibleState: the only board view a later agent may accept.
+"""VisibleState: the only board view an agent may accept.
 
 The hidden mine set is not a field here. Clue numbers are copied from the
 values computed when mines were placed, so editing the mine set afterwards
@@ -24,7 +24,7 @@ class VisibleCell:
 
 @dataclasses.dataclass(frozen=True)
 class VisibleState:
-    """What section 2 of the architecture plan allows an agent to see.
+    """The cells, clue numbers, and mine count an agent is allowed to see.
 
     ``mine_count`` is K, a rule of the difficulty. ``mines_unaccounted`` is K
     minus the number of flagged cells. Neither field is a mine coordinate.

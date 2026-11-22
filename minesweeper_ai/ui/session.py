@@ -37,8 +37,6 @@ PLAYER_TREE = "decision_tree"
 PLAYER_HYBRID = "hybrid"
 PLAYERS: tuple[str, ...] = (MANUAL, PLAYER_CLP, PLAYER_MCMC, PLAYER_TREE, PLAYER_HYBRID)
 
-# Architecture section 1. The environment already accepts these arguments.
-# The harness refuses them. The window offers them for play only.
 INTERMEDIATE_ROWS = 16
 INTERMEDIATE_COLS = 16
 INTERMEDIATE_MINES = 40
@@ -67,8 +65,8 @@ def phase1_agent(name: str) -> object:
 
     CLP, MCMC, and the decision tree match the harness factories. CLP and
     MCMC have no node cap. MCMC uses sampler seed 0. The decision tree is
-    loaded from the saved Stage 4 file and is not fit again. The hybrid is
-    a fourth window player. The harness factories do not include it.
+    loaded from the saved file and is not fit again. The hybrid is an
+    additional window player. The harness factories do not include it.
     """
     if name == PLAYER_CLP:
         return CLPAgent()
@@ -93,7 +91,7 @@ def difficulty_label(name: str) -> str:
     """Button text for a size the environment can construct."""
     rows, cols, mines = DIFFICULTIES[name]
     if name == "intermediate":
-        return f"Intermediate ({rows}×{cols}, {mines} mines, play only)"
+        return f"Intermediate ({rows}×{cols}, {mines} mines)"
     return f"Beginner ({rows}×{cols}, {mines} mines)"
 
 

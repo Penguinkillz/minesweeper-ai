@@ -1,19 +1,20 @@
-"""Comparison figures read from the Phase 1 log.
+"""Comparison figures for the beginner seed list.
 
-The only source is ``phase1_log.jsonl`` for seeds 100 through 149, the
-beginner board. ``summarize`` counts the records. This module does not
-copy the Stage 4 error file, and it does not play a game. A field that is
-not in the summary is left out of the rows.
+The saved summary is the source when the raw log is not in the repository.
+A log path can still be passed in. This module does not open the training
+metrics and it does not play a game. A field that is not in the summary is
+left out of the rows.
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
 from minesweeper_ai.env.board import BEGINNER_COLS, BEGINNER_MINES, BEGINNER_ROWS
-from minesweeper_ai.evaluation.harness import LOG_PATH, PHASE1_SEEDS
+from minesweeper_ai.evaluation.harness import LOG_PATH, PHASE1_SEEDS, SUMMARY_PATH
 from minesweeper_ai.evaluation.metrics import read_log, summarize
 
 # The published Phase 1 list. A log of seeds 0–49 is refused.
@@ -44,7 +45,7 @@ AGENT_FIELDS: tuple[tuple[str, str], ...] = (
     ("mine_hit_statuses", "Mine-hit statuses"),
 )
 
-# Totals are shown only when the mean, which is the section 9 figure, is absent.
+# Totals are shown only when the mean is absent.
 AGENT_TIME_FALLBACKS: tuple[tuple[str, str, str], ...] = (
     ("mean_game_seconds", "game_seconds_total", "Game seconds total"),
     ("mean_decision_seconds", "decision_seconds_total", "Decision seconds total"),
@@ -168,11 +169,14 @@ class DashboardModel:
 
 
 def load_phase1_dashboard(path: Path | None = None) -> DashboardModel:
-    """Read the committed Phase 1 log and count it.
+    """Read the beginner comparison.
 
-    Seeds other than 100–149, or a board other than 9×9 with 10 mines, are
-    refused. The decision-tree metric file is not opened.
+    With no path, use the raw log when it is present and the saved summary
+    otherwise. Seeds other than 100–149, or a board other than 9×9 with 10
+    mines, are refused. The decision-tree metric file is not opened.
     """
+    if path is None and not LOG_PATH.is_file():
+        return _from_summary_file(SUMMARY_PATH)
     log_path = path or LOG_PATH
     records = read_log(log_path)
     header = _validated_header(log_path, records)
@@ -180,6 +184,25 @@ def load_phase1_dashboard(path: Path | None = None) -> DashboardModel:
     summary_seeds = summary.get("seeds")
     if list(summary_seeds) != list(header.seeds):  # type: ignore[arg-type]
         raise ValueError("the summary seeds do not match the log header")
+    return DashboardModel.from_summary(header, summary)
+
+
+def _from_summary_file(path: Path) -> DashboardModel:
+    summary = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(summary, dict):
+        raise ValueError("the comparison summary is not an object")
+    seeds = summary.get("seeds")
+    if list(seeds) != list(PHASE1_SEED_LIST) or list(PHASE1_SEEDS) != list(PHASE1_SEED_LIST):  # type: ignore[arg-type]
+        raise ValueError("The comparison view reads the Phase 1 log of seeds 100-149 only.")
+    source = summary.get("source_log")
+    header = LogHeader(
+        source_log=source if isinstance(source, str) and source else _display_path(path),
+        seeds=tuple(int(seed) for seed in seeds),  # type: ignore[union-attr]
+        rows=BEGINNER_ROWS,
+        cols=BEGINNER_COLS,
+        mine_count=BEGINNER_MINES,
+        phase=1,
+    )
     return DashboardModel.from_summary(header, summary)
 
 

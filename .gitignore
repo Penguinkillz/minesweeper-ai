@@ -1,0 +1,5 @@
+minesweeper_ai/training/forest_data/
+minesweeper_ai/evaluation/results/improved/
+*.jsonl
+__pycache__/
+*.py[cod]
